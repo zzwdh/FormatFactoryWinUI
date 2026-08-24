@@ -1,0 +1,286 @@
+<Window
+    x:Class="FormatFactoryWinUI.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="格式工厂 WinUI">
+
+    <Grid x:Name="RootGrid">
+        <NavigationView x:Name="NavView"
+                        PaneDisplayMode="LeftCompact"
+                        IsBackButtonVisible="Collapsed"
+                        IsSettingsVisible="False"
+                        SelectionChanged="NavView_SelectionChanged">
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="全部任务" Tag="all" IsSelected="True">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="AllApps" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="视频" Tag="video">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Video" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="音频" Tag="audio">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Audio" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="图片" Tag="image">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Pictures" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem Content="设置" Tag="settings">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Setting" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.FooterMenuItems>
+
+            <NavigationView.Content>
+                <Grid>
+                    <Grid x:Name="ConverterView" Padding="24,18,24,18" RowSpacing="12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="3">
+                                <TextBlock Text="格式工厂" Style="{ThemeResource TitleTextBlockStyle}" />
+                                <TextBlock x:Name="QueueSummaryText" Text="拖入文件，选择预设，开始转换" Opacity="0.68" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Click="AddFilesButton_Click" Padding="16,9" Style="{StaticResource AccentButtonStyle}">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <FontIcon Glyph="&#xE8B7;" />
+                                    <TextBlock Text="添加文件" />
+                                </StackPanel>
+                            </Button>
+                            <Button Grid.Column="2" Click="AddFolderButton_Click" Padding="16,9">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <FontIcon Glyph="&#xE8B7;" />
+                                    <TextBlock Text="添加文件夹" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+
+                        <InfoBar x:Name="AppInfoBar" Grid.Row="1" IsOpen="False" IsClosable="True" />
+
+                        <Border x:Name="DropZone"
+                                Grid.Row="2"
+                                AllowDrop="True"
+                                DragOver="DropZone_DragOver"
+                                Drop="DropZone_Drop"
+                                MinHeight="104"
+                                BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="14"
+                                Padding="18"
+                                Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="5">
+                                <FontIcon Glyph="&#xE898;" FontSize="26" HorizontalAlignment="Center" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                <TextBlock Text="拖放文件或文件夹到这里" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                <TextBlock Text="支持视频、音频和图片，加入后可逐项选择输出预设" Opacity="0.68" HorizontalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Row="3"
+                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource SubtleBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Padding="12">
+                            <Grid ColumnSpacing="14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="转换队列" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="预设：快速 / 平衡 / 高质量 / 无损" Opacity="0.62" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="2" Text="硬件不可用时自动回退 CPU" Opacity="0.62" VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+
+                        <Grid Grid.Row="4">
+                            <Border x:Name="EmptyState"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource SubtleBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="14"
+                                    Padding="36"
+                                    Visibility="Visible">
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                                    <FontIcon Glyph="&#xE8B7;" FontSize="34" HorizontalAlignment="Center" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                    <TextBlock x:Name="EmptyStateTitle" Text="还没有转换任务" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                    <TextBlock x:Name="EmptyStateText" Text="点击“添加文件”或将文件拖入上方区域" Opacity="0.68" HorizontalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+
+                            <ListView x:Name="TaskList" ItemsSource="{x:Bind VisibleTasks}" SelectionMode="None" Visibility="Collapsed">
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        <Setter Property="Padding" Value="0" />
+                                        <Setter Property="Margin" Value="0,0,0,8" />
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+                                <ListView.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{ThemeResource TaskCardBrush}"
+                                                BorderBrush="{ThemeResource SubtleBorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="12"
+                                                Padding="14">
+                                            <Grid RowSpacing="8" ColumnSpacing="10">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                </Grid.RowDefinitions>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="112" />
+                                                    <ColumnDefinition Width="112" />
+                                                    <ColumnDefinition Width="160" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <StackPanel Grid.Column="0" Spacing="3">
+                                                    <TextBlock Text="{Binding FileName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Opacity="0.62" FontSize="12" TextTrimming="CharacterEllipsis">
+                                                        <Run Text="{Binding KindText}" /><Run Text=" · " /><Run Text="{Binding FileSizeText}" /><Run Text=" · " /><Run Text="{Binding MediaInfo}" />
+                                                    </TextBlock>
+                                                </StackPanel>
+                                                <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableFormats}" SelectedItem="{Binding TargetFormat, Mode=TwoWay}" Header="输出格式" />
+                                                <ComboBox Grid.Column="2" ItemsSource="{Binding ModeOptions}" SelectedItem="{Binding ConversionMode, Mode=TwoWay}" Header="预设" />
+                                                <ComboBox Grid.Column="3"
+                                                          ItemsSource="{Binding AudioTracks}"
+                                                          DisplayMemberPath="DisplayName"
+                                                          SelectedIndex="{Binding SelectedAudioTrack, Mode=TwoWay}"
+                                                          Visibility="{Binding AudioTrackVisibility}"
+                                                          Header="提取音轨" />
+                                                <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="4" VerticalAlignment="Bottom">
+                                                    <Button Tag="{Binding Id}" Click="StartTaskButton_Click" ToolTipService.ToolTip="开始或重试"><FontIcon Glyph="&#xE768;" /></Button>
+                                                    <Button Tag="{Binding Id}" Click="PauseTaskButton_Click" ToolTipService.ToolTip="暂停或继续"><FontIcon Glyph="&#xE769;" /></Button>
+                                                    <Button Tag="{Binding Id}" Click="OpenOutputButton_Click" ToolTipService.ToolTip="打开输出位置"><FontIcon Glyph="&#xE838;" /></Button>
+                                                    <Button Tag="{Binding Id}" Click="CopyErrorButton_Click" ToolTipService.ToolTip="复制状态或错误"><FontIcon Glyph="&#xE8C8;" /></Button>
+                                                    <Button Tag="{Binding Id}" Click="CancelOrRemoveButton_Click" ToolTipService.ToolTip="取消或移除"><FontIcon Glyph="&#xE74D;" /></Button>
+                                                </StackPanel>
+
+                                                <ProgressBar Grid.Row="1" Grid.ColumnSpan="4" Value="{Binding Progress}" Maximum="100" Height="4" />
+                                                <TextBlock Grid.Row="1" Grid.Column="4" Text="{Binding StateText}" FontWeight="SemiBold" HorizontalAlignment="Right" />
+
+                                                <TextBlock Grid.Row="2" Grid.ColumnSpan="3" Text="{Binding Message}" TextTrimming="CharacterEllipsis" Opacity="0.72" FontSize="12" />
+                                                <TextBlock Grid.Row="2" Grid.Column="3" Grid.ColumnSpan="2" HorizontalAlignment="Right" Opacity="0.72" FontSize="12">
+                                                    <Run Text="速度 " /><Run Text="{Binding Speed}" /><Run Text=" · 剩余 " /><Run Text="{Binding Remaining}" />
+                                                </TextBlock>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </Grid>
+
+                        <Border Grid.Row="5" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="12" Padding="12">
+                            <Grid ColumnSpacing="9">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="160" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="输出到" VerticalAlignment="Center" />
+                                <ComboBox x:Name="OutputModeCombo" Grid.Column="1" SelectionChanged="OutputModeCombo_SelectionChanged">
+                                    <x:String>自定义目录</x:String>
+                                    <x:String>源文件目录</x:String>
+                                </ComboBox>
+                                <Button x:Name="OutputDirectoryButton" Grid.Column="2" Click="ChooseOutputDirectoryButton_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+                                    <TextBlock x:Name="OutputDirectoryText" TextTrimming="CharacterEllipsis" />
+                                </Button>
+                                <Button Grid.Column="3" Click="PauseAllButton_Click" Padding="12,8"><TextBlock Text="暂停/继续" /></Button>
+                                <Button Grid.Column="4" Click="CancelAllButton_Click" Padding="12,8"><TextBlock Text="清空待处理" /></Button>
+                                <Button Grid.Column="5" Click="StartAllButton_Click" Style="{StaticResource AccentButtonStyle}" Padding="16,8">
+                                    <StackPanel Orientation="Horizontal" Spacing="6"><FontIcon Glyph="&#xE768;" /><TextBlock Text="全部开始" /></StackPanel>
+                                </Button>
+                            </Grid>
+                        </Border>
+                    </Grid>
+
+                    <ScrollViewer x:Name="SettingsView" Visibility="Collapsed" Padding="24,18,24,18">
+                        <StackPanel Spacing="14" MaxWidth="900" HorizontalAlignment="Left">
+                            <StackPanel Spacing="3">
+                                <TextBlock Text="设置" Style="{ThemeResource TitleTextBlockStyle}" />
+                                <TextBlock Text="常用选项保持简单，高级性能参数集中在这里。" Opacity="0.68" />
+                            </StackPanel>
+
+                            <InfoBar x:Name="SettingsInfoBar" IsOpen="False" IsClosable="True" />
+
+                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="12" Padding="18">
+                                <StackPanel Spacing="10">
+                                    <TextBlock Text="FFmpeg" FontSize="18" FontWeight="SemiBold" />
+                                    <TextBlock Text="启动时自动检测，缺失时自动下载；也可手动选择。" Opacity="0.68" />
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <TextBox x:Name="FfmpegPathTextBox" PlaceholderText="ffmpeg.exe 路径" />
+                                        <Button Grid.Column="1" Click="BrowseFfmpegButton_Click" Content="浏览" />
+                                        <Button Grid.Column="2" Click="DetectFfmpegButton_Click" Content="自动检测" />
+                                        <Button Grid.Column="3" Click="DownloadFfmpegButton_Click" Content="下载 FFmpeg" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="12" Padding="18">
+                                <StackPanel Spacing="12">
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="性能与加速" FontSize="18" FontWeight="SemiBold" />
+                                        <TextBlock Text="优先尝试 NVENC、Quick Sync、AMD AMF，失败后自动回退 CPU。" Opacity="0.68" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <Grid RowSpacing="12" ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                        <NumberBox x:Name="ParallelCountBox" Header="并行任务数" Minimum="1" Maximum="4" SpinButtonPlacementMode="Compact" />
+                                        <NumberBox x:Name="CpuThreadsBox" Grid.Column="1" Header="CPU 线程/任务（0=自动）" Minimum="0" Maximum="64" SpinButtonPlacementMode="Compact" />
+                                        <ToggleSwitch x:Name="HardwareToggle" Grid.Row="1" Header="自动硬件编码" OnContent="NVENC → QSV → AMD AMF → CPU" OffContent="仅使用 CPU" />
+                                        <TextBlock x:Name="CpuStrategyText" Grid.Row="1" Grid.Column="1" Text="自动分配 CPU 线程" Opacity="0.68" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                        <ToggleSwitch x:Name="NotificationToggle" Grid.Row="2" Header="任务完成通知" />
+                                        <StackPanel Grid.Row="2" Grid.Column="1" Spacing="4">
+                                            <ToggleSwitch x:Name="SoundToggle" Header="通知提示音" />
+                                            <ToggleSwitch x:Name="TrayToggle" Header="关闭时最小化到托盘" />
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="12" Padding="18">
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="220" /></Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="主题" FontWeight="SemiBold" />
+                                        <TextBlock Text="跟随 Windows 或手动选择。" Opacity="0.65" FontSize="12" />
+                                    </StackPanel>
+                                    <ComboBox x:Name="ThemeCombo" Grid.Column="1" SelectionChanged="ThemeCombo_SelectionChanged">
+                                        <x:String>跟随系统</x:String><x:String>浅色</x:String><x:String>深色</x:String>
+                                    </ComboBox>
+                                </Grid>
+                            </Border>
+
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Button Click="SaveSettingsButton_Click" Style="{StaticResource AccentButtonStyle}" Content="保存设置" />
+                                <Button Click="OpenLogsButton_Click" Content="打开日志目录" />
+                            </StackPanel>
+                            <TextBlock Text="格式工厂 WinUI · 本地转换" Opacity="0.55" FontSize="12" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </NavigationView.Content>
+        </NavigationView>
+    </Grid>
+</Window>
