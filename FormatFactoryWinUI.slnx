@@ -1,3 +1,10 @@
 <Solution>
+  <Project Path="src/FormatFactory.FilterWorker/FormatFactory.FilterWorker.csproj" />
+  <Project Path="src/FormatFactory.Core/FormatFactory.Core.csproj" />
+  <Project Path="src/FormatFactory.Documents/FormatFactory.Documents.csproj" />
+  <Project Path="src/FormatFactory.Engine/FormatFactory.Engine.csproj" />
+  <Project Path="src/FormatFactory.Presentation/FormatFactory.Presentation.csproj" />
   <Project Path="src/FormatFactoryWinUI/FormatFactoryWinUI.csproj" />
+  <Project Path="tests/FormatFactoryWinUI.TestHelper/FormatFactoryWinUI.TestHelper.csproj" />
+  <Project Path="tests/FormatFactoryWinUI.Tests/FormatFactoryWinUI.Tests.csproj" />
 </Solution>

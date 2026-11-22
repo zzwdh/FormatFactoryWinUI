@@ -1,0 +1,4 @@
+LIBRARY "FormatFactoryShellExtension.Native.dll"
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE

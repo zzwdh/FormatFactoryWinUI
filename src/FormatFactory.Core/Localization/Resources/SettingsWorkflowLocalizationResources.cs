@@ -1,0 +1,16 @@
+namespace FormatFactoryWinUI.Services;
+
+internal static class SettingsWorkflowLocalizationResources
+{
+    internal static readonly LocalizedResourceModule Module = new(
+        "SettingsWorkflow",
+        [
+            new("ConversionUiSettingsUnsaved", ["Unsaved changes", "有未保存更改", "有未儲存變更", "未保存の変更があります", "저장하지 않은 변경 사항", "Cambios sin guardar", "Modifications non enregistrées", "Ungespeicherte Änderungen", "Alterações não salvas", "Есть несохранённые изменения", "Modifiche non salvate", "Niet-opgeslagen wijzigingen", "Niezapisane zmiany", "Kaydedilmemiş değişiklikler", "تغييرات غير محفوظة"]),
+            new("ConversionUiSettingsSaving", ["Saving…", "正在保存…", "正在儲存…", "保存中…", "저장 중…", "Guardando…", "Enregistrement…", "Wird gespeichert…", "Salvando…", "Сохранение…", "Salvataggio…", "Opslaan…", "Zapisywanie…", "Kaydediliyor…", "جارٍ الحفظ…"]),
+            new("ConversionUiSettingsSaved", ["Saved", "已保存", "已儲存", "保存済み", "저장됨", "Guardado", "Enregistré", "Gespeichert", "Salvo", "Сохранено", "Salvato", "Opgeslagen", "Zapisano", "Kaydedildi", "تم الحفظ"]),
+            new("ConversionUiSettingsSaveFailed", ["Save failed · changes kept", "保存失败 · 更改已保留", "儲存失敗 · 變更已保留", "保存失敗 · 変更は保持されています", "저장 실패 · 변경 사항 유지됨", "Error al guardar · cambios conservados", "Échec de l’enregistrement · modifications conservées", "Speichern fehlgeschlagen · Änderungen beibehalten", "Falha ao salvar · alterações mantidas", "Ошибка сохранения · изменения сохранены в форме", "Salvataggio non riuscito · modifiche mantenute", "Opslaan mislukt · wijzigingen behouden", "Zapis nie powiódł się · zmiany zachowane", "Kayıt başarısız · değişiklikler korundu", "تعذّر الحفظ · تم الاحتفاظ بالتغييرات"]),
+            new("ConversionUiSettingsSaveFailedDetails", ["Could not save: {0}", "未能保存：{0}", "未能儲存：{0}", "保存できませんでした：{0}", "저장할 수 없음: {0}", "No se pudo guardar: {0}", "Impossible d’enregistrer : {0}", "Speichern nicht möglich: {0}", "Não foi possível salvar: {0}", "Не удалось сохранить: {0}", "Impossibile salvare: {0}", "Kan niet opslaan: {0}", "Nie można zapisać: {0}", "Kaydedilemedi: {0}", "تعذّر الحفظ: {0}"]),
+            new("ConversionUiSettingsToolPathInvalid", ["Tool not found: {0}", "未找到工具：{0}", "找不到工具：{0}", "ツールが見つかりません：{0}", "도구를 찾을 수 없음: {0}", "Herramienta no encontrada: {0}", "Outil introuvable : {0}", "Tool nicht gefunden: {0}", "Ferramenta não encontrada: {0}", "Инструмент не найден: {0}", "Strumento non trovato: {0}", "Hulpmiddel niet gevonden: {0}", "Nie znaleziono narzędzia: {0}", "Araç bulunamadı: {0}", "لم يتم العثور على الأداة: {0}"]),
+            new("ConversionUiSettingsApplyFailed", ["Saved. Some services could not refresh: {0}", "已保存，部分服务未能刷新：{0}", "已儲存，部分服務未能重新整理：{0}", "保存済み。一部のサービスを更新できませんでした：{0}", "저장됨. 일부 서비스를 새로 고치지 못함: {0}", "Guardado. Algunos servicios no se actualizaron: {0}", "Enregistré. Certains services n’ont pas pu être actualisés : {0}", "Gespeichert. Einige Dienste konnten nicht aktualisiert werden: {0}", "Salvo. Alguns serviços não foram atualizados: {0}", "Сохранено. Некоторые службы не удалось обновить: {0}", "Salvato. Impossibile aggiornare alcuni servizi: {0}", "Opgeslagen. Sommige services konden niet worden vernieuwd: {0}", "Zapisano. Nie udało się odświeżyć niektórych usług: {0}", "Kaydedildi. Bazı hizmetler yenilenemedi: {0}", "تم الحفظ. تعذّر تحديث بعض الخدمات: {0}"])
+        ]);
+}

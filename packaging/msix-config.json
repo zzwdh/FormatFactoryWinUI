@@ -1,0 +1,8 @@
+{
+  "PackageName": "zzwdh.WinUI",
+  "Publisher": "CN=B07EB5A4-EC7F-428F-8829-9FB109CE5A74",
+  "PublisherDisplayName": "zzwdh",
+  "DisplayName": "FluentFormatConverter",
+  "Description": "Local media, document, ebook and disc conversion.",
+  "InAppOnlyLanguages": ["bho-IN", "jv-ID", "my-MM", "om-ET", "pcm-NG", "ps-AF", "yue-Hant-HK"]
+}

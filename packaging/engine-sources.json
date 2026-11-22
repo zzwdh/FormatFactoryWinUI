@@ -1,0 +1,232 @@
+{
+  "schemaVersion": 1,
+  "engines": [
+    {
+      "id": "7zip",
+      "version": "26.05",
+      "strategy": "sevenZipInstaller",
+      "payloadMode": "runtime",
+      "requiredFiles": [
+        "7z.exe", "7z.dll", "License.txt", "readme.txt", "History.txt",
+        "NOTICE.md", "licenses/COPYING.LGPL2.1.txt", "licenses/unRarLicense.txt",
+        "licenses/7z2605-src.tar.xz"
+      ],
+      "peFiles": ["7z.exe", "7z.dll"],
+      "bootstrap": {
+        "fileName": "7zr2605.exe",
+        "url": "https://github.com/ip7z/7zip/releases/download/26.05/7zr.exe",
+        "sha256": "9bf582b894dfa665f852d7e9112b02290a1c303c2d95a21fcdc41ffcb03143b7"
+      },
+      "source": {
+        "fileName": "7z2605-src.tar.xz",
+        "url": "https://github.com/ip7z/7zip/releases/download/26.05/7z2605-src.tar.xz",
+        "sha256": "0b6080b8c3e7a579161d2d495224c0e51c467576cb4c7048b0ab485ef44cc22e"
+      },
+      "artifacts": {
+        "x64": {
+          "runtimeArchitecture": "x64",
+          "fileName": "7z2605-x64.exe",
+          "url": "https://github.com/ip7z/7zip/releases/download/26.05/7z2605-x64.exe",
+          "sha256": "fd99e86f57d8f429ef5ed045bf98315af962e2309b0f1ba87a147a44c71647d0"
+        },
+        "arm64": {
+          "runtimeArchitecture": "arm64",
+          "fileName": "7z2605-arm64.exe",
+          "url": "https://github.com/ip7z/7zip/releases/download/26.05/7z2605-arm64.exe",
+          "sha256": "86d5790d5dd84cab4636c3bb7fab10d3ed7cd3e57e6119401bd2769e28165268"
+        }
+      }
+    },
+    {
+      "id": "ffmpeg",
+      "version": "n9.0.2-17-g2a571b6068",
+      "strategy": "ffmpegZip",
+      "payloadMode": "runtime",
+      "requiredFiles": [
+        "ffmpeg.exe",
+        "ffprobe.exe",
+        "avcodec-63.dll",
+        "avdevice-63.dll",
+        "avfilter-12.dll",
+        "avformat-63.dll",
+        "avutil-61.dll",
+        "swresample-7.dll",
+        "swscale-10.dll",
+        "LICENSE.txt"
+      ],
+      "peFiles": [
+        "ffmpeg.exe",
+        "ffprobe.exe",
+        "avcodec-63.dll",
+        "avdevice-63.dll",
+        "avfilter-12.dll",
+        "avformat-63.dll",
+        "avutil-61.dll",
+        "swresample-7.dll",
+        "swscale-10.dll"
+      ],
+      "artifacts": {
+        "x64": {
+          "runtimeArchitecture": "x64",
+          "fileName": "ffmpeg-n9.0.2-17-g2a571b6068-win64-gpl-shared-9.0.zip",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n9.0.2-17-g2a571b6068-win64-gpl-shared-9.0.zip",
+          "sha256": "3da6c7b60bb9ccd73ec5b5e815ba804a0879eb362ba0e3beebce50174c022696"
+        },
+        "arm64": {
+          "runtimeArchitecture": "arm64",
+          "fileName": "ffmpeg-n9.0.2-17-g2a571b6068-winarm64-gpl-shared-9.0.zip",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n9.0.2-17-g2a571b6068-winarm64-gpl-shared-9.0.zip",
+          "sha256": "92460cf103340012d41413b557669902538f040e0c953abc1d719750dcd5f8a8"
+        }
+      }
+    },
+    {
+      "id": "ffmpeg-compatibility",
+      "version": "librempeg-9c00336e26-conversion-v1",
+      "strategy": "librempegConversionBuild",
+      "payloadMode": "runtime",
+      "requiredFiles": [
+        "ffmpeg.exe",
+        "ffprobe.exe",
+        "avcodec-63.dll",
+        "avfilter-12.dll",
+        "avformat-63.dll",
+        "avutil-61.dll",
+        "swresample-7.dll",
+        "swscale-10.dll",
+        "msvcp140.dll",
+        "vcruntime140.dll",
+        "vcruntime140_1.dll",
+        "runtime.json",
+        "sources.lock.json",
+        "build-receipt.json",
+        "licenses/librempeg/COPYING.AGPLv3",
+        "licenses/librempeg/COPYING.GPLv3",
+        "licenses/librempeg/LICENSE.md"
+      ],
+      "peFiles": [
+        "ffmpeg.exe",
+        "ffprobe.exe",
+        "avcodec-63.dll",
+        "avfilter-12.dll",
+        "avformat-63.dll",
+        "avutil-61.dll",
+        "swresample-7.dll",
+        "swscale-10.dll",
+        "msvcp140.dll",
+        "vcruntime140.dll",
+        "vcruntime140_1.dll"
+      ],
+      "artifacts": {
+        "x64": {
+          "runtimeArchitecture": "x64",
+          "archiveRole": "corresponding-source",
+          "fileName": "mpv-libre-runtime-sources.tar.xz",
+          "url": "https://github.com/Zencok/mpv-libre-runtime/releases/download/runtime-mpv-2a4eb8067c-librempeg-9c00336e26-fb08030026/mpv-libre-runtime-sources.tar.xz",
+          "sha256": "fd6e2e5a914906ac428c879b6b1f8609cf6ee581f92d5da2c1a6b582cc2fbc03"
+        },
+        "arm64": {
+          "runtimeArchitecture": "x64",
+          "archiveRole": "corresponding-source",
+          "fileName": "mpv-libre-runtime-sources.tar.xz",
+          "url": "https://github.com/Zencok/mpv-libre-runtime/releases/download/runtime-mpv-2a4eb8067c-librempeg-9c00336e26-fb08030026/mpv-libre-runtime-sources.tar.xz",
+          "sha256": "fd6e2e5a914906ac428c879b6b1f8609cf6ee581f92d5da2c1a6b582cc2fbc03"
+        }
+      }
+    },
+    {
+      "id": "libreoffice",
+      "version": "26.8.0",
+      "strategy": "libreofficeMsi",
+      "payloadMode": "runtime",
+      "requiredFiles": [
+        "program/soffice.com",
+        "program/soffice.exe",
+        "program/soffice.bin",
+        "program/fundamental.ini",
+        "program/services.rdb",
+        "program/types.rdb",
+        "program/vcruntime140.dll",
+        "program/msvcp140.dll",
+        "program/msvcp140_1.dll",
+        "program/msvcp140_2.dll"
+      ],
+      "peFiles": [
+        "program/soffice.exe",
+        "program/soffice.bin",
+        "program/vcruntime140.dll",
+        "program/msvcp140.dll",
+        "program/msvcp140_1.dll",
+        "program/msvcp140_2.dll"
+      ],
+      "artifacts": {
+        "x64": {
+          "runtimeArchitecture": "x64",
+          "fileName": "LibreOffice_26.8.0_Win_x86-64.msi",
+          "url": "https://download.documentfoundation.org/libreoffice/stable/26.8.0/win/x86_64/LibreOffice_26.8.0_Win_x86-64.msi",
+          "sha256": "4aa6c6e1895f4055104effcb556bd3362d20c6ad707c149543304f395ef9db95"
+        },
+        "arm64": {
+          "runtimeArchitecture": "arm64",
+          "fileName": "LibreOffice_26.8.0_Win_aarch64.msi",
+          "url": "https://download.documentfoundation.org/libreoffice/stable/26.8.0/win/aarch64/LibreOffice_26.8.0_Win_aarch64.msi",
+          "sha256": "7ea33f771223a68c49538438e5f57e7805bc951edc8d22dcdF4ef26e3ab2fbe0"
+        }
+      }
+    },
+    {
+      "id": "calibre",
+      "version": "9.15.0",
+      "strategy": "calibreMsi",
+      "payloadMode": "runtime",
+      "requiredFiles": [
+        "ebook-convert.exe",
+        "ebook-meta.exe",
+        "app/bin/calibre-launcher.dll",
+        "app/bin/python3.dll"
+      ],
+      "peFiles": [
+        "ebook-convert.exe",
+        "ebook-meta.exe"
+      ],
+      "artifacts": {
+        "x64": {
+          "runtimeArchitecture": "x64",
+          "fileName": "calibre-64bit-9.15.0.msi",
+          "url": "https://github.com/kovidgoyal/calibre/releases/download/v9.15.0/calibre-64bit-9.15.0.msi",
+          "sha256": "0f96ae06165c2419607c1c66726c091a78e89e08ea69f077cf3e2c884e800853"
+        },
+        "arm64": {
+          "runtimeArchitecture": "x64",
+          "fileName": "calibre-64bit-9.15.0.msi",
+          "url": "https://github.com/kovidgoyal/calibre/releases/download/v9.15.0/calibre-64bit-9.15.0.msi",
+          "sha256": "0f96ae06165c2419607c1c66726c091a78e89e08ea69f077cf3e2c884e800853"
+        }
+      }
+    },
+    {
+      "id": "makemkv",
+      "version": "2.0.0",
+      "strategy": "installer",
+      "payloadMode": "installerOnly",
+      "requiredFiles": [
+        "Setup_MakeMKV_v2.0.0.exe"
+      ],
+      "peFiles": [],
+      "artifacts": {
+        "x64": {
+          "runtimeArchitecture": "installer",
+          "fileName": "Setup_MakeMKV_v2.0.0.exe",
+          "url": "https://www.makemkv.com/download/Setup_MakeMKV_v2.0.0.exe",
+          "sha256": "f4e609bd34042a95b82a37d036d099a96e4480ff43d2bbb0bee009757bd74b72"
+        },
+        "arm64": {
+          "runtimeArchitecture": "installer",
+          "fileName": "Setup_MakeMKV_v2.0.0.exe",
+          "url": "https://www.makemkv.com/download/Setup_MakeMKV_v2.0.0.exe",
+          "sha256": "f4e609bd34042a95b82a37d036d099a96e4480ff43d2bbb0bee009757bd74b72"
+        }
+      }
+    }
+  ]
+}

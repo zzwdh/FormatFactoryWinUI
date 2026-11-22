@@ -1,7 +1,8 @@
 {
   "sdk": {
-    "version": "11.0.100-preview.7.26381.103",
+    "version": "11.0.100",
     "rollForward": "disable",
-    "allowPrerelease": true
+    "allowPrerelease": false,
+    "paths": [ "$host$", "./work/dotnet-ga/sdk" ]
   }
 }

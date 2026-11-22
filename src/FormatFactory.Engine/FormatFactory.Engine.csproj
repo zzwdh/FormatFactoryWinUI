@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <RootNamespace>FormatFactoryWinUI</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FormatFactory.Core\FormatFactory.Core.csproj" />
+    <PackageReference Include="Sentry" />
+    <PackageReference Include="Sentry.Profiling" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="FormatFactory.Documents" />
+    <InternalsVisibleTo Include="FormatFactory.Presentation" />
+    <InternalsVisibleTo Include="FormatFactoryWinUI" />
+    <InternalsVisibleTo Include="FormatFactoryWinUI.Tests" />
+    <InternalsVisibleTo Include="FormatFactoryWinUI.TestHelper" />
+  </ItemGroup>
+</Project>

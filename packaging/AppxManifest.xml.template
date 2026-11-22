@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:desktop2="http://schemas.microsoft.com/appx/manifest/desktop/windows10/2"
+  xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"
+  xmlns:desktop5="http://schemas.microsoft.com/appx/manifest/desktop/windows10/5"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+  IgnorableNamespaces="uap desktop desktop2 desktop4 desktop5 rescap com">
+  <Identity Name="__PACKAGE_NAME__" Publisher="__PUBLISHER__" Version="__VERSION__" ProcessorArchitecture="__ARCHITECTURE__" />
+  <Properties>
+    <DisplayName>__DISPLAY_NAME__</DisplayName>
+    <PublisherDisplayName>__PUBLISHER_DISPLAY_NAME__</PublisherDisplayName>
+    <Description>__DESCRIPTION__</Description>
+    <Logo>Assets\AppIcon150.png</Logo>
+  </Properties>
+  <Resources>
+    <Resource Language="en-US" />
+    <Resource Language="zh-CN" />
+    <Resource Language="zh-TW" />
+    <Resource Language="ja-JP" />
+    <Resource Language="ko-KR" />
+    <Resource Language="es-ES" />
+    <Resource Language="fr-FR" />
+    <Resource Language="de-DE" />
+    <Resource Language="pt-BR" />
+    <Resource Language="ru-RU" />
+    <Resource Language="it-IT" />
+    <Resource Language="nl-NL" />
+    <Resource Language="pl-PL" />
+    <Resource Language="tr-TR" />
+    <Resource Language="ar-SA" />
+    <Resource Language="da-DK" />
+    <Resource Language="hu-HU" />
+    <Resource Language="ro-RO" />
+    <Resource Language="sv-SE" />
+    <Resource Language="nb-NO" />
+    <Resource Language="fi-FI" />
+    <Resource Language="cs-CZ" />
+    <Resource Language="el-GR" />
+    <Resource Language="uk-UA" />
+    <Resource Language="vi-VN" />
+    <Resource Language="th-TH" />
+    <Resource Language="id-ID" />
+    <Resource Language="ms-MY" />
+    <Resource Language="hi-IN" />
+    <Resource Language="fil-PH" />
+    <Resource Language="sk-SK" />
+    <Resource Language="sl-SI" />
+    <Resource Language="hr-HR" />
+    <Resource Language="bg-BG" />
+    <Resource Language="lt-LT" />
+    <Resource Language="lv-LV" />
+    <Resource Language="et-EE" />
+    <Resource Language="is-IS" />
+    <Resource Language="sr-Latn-RS" />
+    <Resource Language="pt-PT" />
+    <Resource Language="he-IL" />
+    <Resource Language="fa-IR" />
+    <Resource Language="bn-BD" />
+    <Resource Language="ta-IN" />
+    <Resource Language="ur-PK" />
+    <Resource Language="mr-IN" />
+    <Resource Language="te-IN" />
+    <Resource Language="sw-KE" />
+    <Resource Language="ha-Latn-NG" />
+    <Resource Language="pa-Arab-PK" />
+    <Resource Language="pa-IN" />
+    <Resource Language="gu-IN" />
+    <Resource Language="yo-NG" />
+    <Resource Language="sr-Cyrl-RS" />
+    <Resource Language="es-419" />
+    <Resource Language="kn-IN" />
+    <Resource Language="ml-IN" />
+    <Resource Language="uz-Latn-UZ" />
+    <Resource Language="am-ET" />
+    <Resource Language="or-IN" />
+    <Resource Language="ne-NP" />
+  </Resources>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="__MINIMUM_WINDOWS_VERSION__" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Applications>
+    <Application Id="App" Executable="FormatFactoryWinUI.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="__DISPLAY_NAME__"
+        Description="__DESCRIPTION__"
+        BackgroundColor="#2563EB"
+        Square150x150Logo="Assets\AppIcon150.png"
+        Square44x44Logo="Assets\AppIcon44.png" />
+      <Extensions>
+        <desktop:Extension Category="windows.startupTask" Executable="FormatFactoryWinUI.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="FormatFactoryWinUIStartup" DisplayName="__DISPLAY_NAME__" Enabled="false" />
+        </desktop:Extension>
+        <Extension Category="windows.backgroundTasks" EntryPoint="Microsoft.Windows.ApplicationModel.Background.UniversalBGTask.Task">
+          <BackgroundTasks><Task Type="general" /></BackgroundTasks>
+        </Extension>
+        <desktop:Extension Category="windows.toastNotificationActivation">
+          <desktop:ToastNotificationActivation ToastActivatorCLSID="D6F7A2C0-1F18-4D93-9C15-0C13C5B0D5A4" />
+        </desktop:Extension>
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:ExeServer Executable="FormatFactoryWinUI.exe" Arguments="----AppNotificationActivated:" DisplayName="__DISPLAY_NAME__">
+              <com:Class Id="D6F7A2C0-1F18-4D93-9C15-0C13C5B0D5A4" />
+              <com:Class Id="C7A5D3E2-91E4-4E20-8AF7-6E1F94F4B9C1" DisplayName="FluentFormatConverter background task" />
+              <com:Class Id="D4C8B1A2-3E5F-4D77-9A10-6B2C4E8F0D31" DisplayName="FluentFormatConverter App Service" />
+            </com:ExeServer>
+            <com:SurrogateServer DisplayName="__DISPLAY_NAME__">
+              <com:Class Id="B23F9D12-9ED4-4A40-B854-7A2B0C7D9A14" Path="FormatFactoryShellExtension.Native.dll" ThreadingModel="Both" />
+              <com:Class Id="7657D52B-308A-4B9F-821F-5D839DB74A11" Path="FormatFactoryShellExtension.Native.dll" ThreadingModel="STA" />
+              <com:Class Id="34E71D22-EBB7-49E1-A7B3-CB9186CC4D20" Path="FormatFactoryShellExtension.Native.dll" ThreadingModel="STA" />
+            </com:SurrogateServer>
+          </com:ComServer>
+        </com:Extension>
+        <desktop4:Extension Category="windows.fileExplorerContextMenus">
+          <desktop4:FileExplorerContextMenus>
+__EXPLORER_ITEM_TYPES__
+          </desktop4:FileExplorerContextMenus>
+        </desktop4:Extension>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="formatfactory-media">
+            <uap:DisplayName>__DISPLAY_NAME__</uap:DisplayName>
+            <uap:Logo>Assets\AppIcon150.png</uap:Logo>
+            <uap:SupportedFileTypes>
+__ASSOCIATED_FILE_TYPES__
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="formatfactory-epub-preview">
+            <uap:DisplayName>EPUB</uap:DisplayName>
+            <uap:Logo>Assets\AppIcon150.png</uap:Logo>
+            <uap:SupportedFileTypes>
+__PREVIEW_FILE_TYPES__
+            </uap:SupportedFileTypes>
+            <desktop2:ThumbnailHandler Clsid="7657D52B-308A-4B9F-821F-5D839DB74A11" />
+            <desktop2:DesktopPreviewHandler Clsid="34E71D22-EBB7-49E1-A7B3-CB9186CC4D20" />
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+        <uap:Extension Category="windows.appService" EntryPoint="FormatFactoryWinUI.Services.FormatFactoryAppService">
+          <uap:AppService Name="FormatFactoryConversion" />
+        </uap:Extension>
+        <uap:Extension Category="windows.shareTarget">
+          <uap:ShareTarget>
+            <uap:SupportedFileTypes>
+__SUPPORTED_FILE_TYPES__
+            </uap:SupportedFileTypes>
+            <uap:DataFormat>StorageItems</uap:DataFormat>
+          </uap:ShareTarget>
+        </uap:Extension>
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="formatfactory">
+            <uap:DisplayName>__DISPLAY_NAME__</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+  <Extensions>
+    <Extension Category="windows.activatableClass.inProcessServer">
+      <InProcessServer>
+        <Path>Microsoft.Windows.ApplicationModel.Background.UniversalBGTask.dll</Path>
+        <ActivatableClass ActivatableClassId="Microsoft.Windows.ApplicationModel.Background.UniversalBGTask.Task" ThreadingModel="both" />
+      </InProcessServer>
+    </Extension>
+  </Extensions>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

@@ -9,18 +9,24 @@
             </ResourceDictionary.MergedDictionaries>
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="TaskCardBrush" Color="#F7F8FC" />
-                    <SolidColorBrush x:Key="SubtleBorderBrush" Color="#16000000" />
+                    <SolidColorBrush x:Key="TaskCardBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="SubtleBorderBrush" Color="#10000000" />
+                    <SolidColorBrush x:Key="FFCommandSurfaceBrush" Color="#FFFFFF" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="TaskCardBrush" Color="#171923" />
-                    <SolidColorBrush x:Key="SubtleBorderBrush" Color="#28FFFFFF" />
+                    <SolidColorBrush x:Key="TaskCardBrush" Color="#2B2B2B" />
+                    <SolidColorBrush x:Key="SubtleBorderBrush" Color="#18FFFFFF" />
+                    <SolidColorBrush x:Key="FFCommandSurfaceBrush" Color="#303030" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="HighContrast">
                     <SolidColorBrush x:Key="TaskCardBrush" Color="{ThemeResource SystemColorWindowColor}" />
                     <SolidColorBrush x:Key="SubtleBorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="FFCommandSurfaceBrush" Color="{ThemeResource SystemColorWindowColor}" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
+            <CornerRadius x:Key="FFCardCornerRadius">12</CornerRadius>
+            <Thickness x:Key="FFCardPadding">16</Thickness>
+            <Thickness x:Key="FFPagePadding">24,18,24,18</Thickness>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

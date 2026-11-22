@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <RootNamespace>FormatFactoryWinUI</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FormatFactory.Core\FormatFactory.Core.csproj" />
+    <ProjectReference Include="..\FormatFactory.Engine\FormatFactory.Engine.csproj" />
+    <PackageReference Include="DocumentFormat.OpenXml" />
+    <PackageReference Include="PDFsharp" />
+    <PackageReference Include="PdfPig" />
+    <InternalsVisibleTo Include="FormatFactoryWinUI" />
+    <InternalsVisibleTo Include="FormatFactoryWinUI.Tests" />
+  </ItemGroup>
+</Project>

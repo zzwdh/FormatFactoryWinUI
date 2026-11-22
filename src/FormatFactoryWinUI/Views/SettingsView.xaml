@@ -1,0 +1,462 @@
+<UserControl
+    x:Class="FormatFactoryWinUI.Views.SettingsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:FormatFactoryWinUI.Controls"
+    HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="ms-appx:///Views/PageResources.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <ScrollViewer x:Name="PageRoot" x:FieldModifier="internal" Padding="{StaticResource FFPagePadding}"
+                  HorizontalContentAlignment="Stretch"
+                  HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="12" HorizontalAlignment="Stretch">
+            <StackPanel Spacing="3">
+                <TextBlock x:Name="SettingsTitleText" x:FieldModifier="internal" Text="Settings" Style="{StaticResource FFPageTitleTextStyle}" />
+                <TextBlock x:Name="SettingsSubtitleText" x:FieldModifier="internal" Text="Settings" Visibility="Collapsed" Style="{StaticResource FFSecondaryTextStyle}" />
+            </StackPanel>
+
+            <InfoBar x:Name="SettingsInfoBar" x:FieldModifier="internal" IsOpen="False" IsClosable="True" />
+
+            <Border controls:CardInteraction.Enable="True" Style="{StaticResource FFCardStyle}">
+                <controls:AdaptiveGrid ColumnSpacing="20" AutoStackCompact="True" CompactThreshold="640" WideThreshold="900" RowSpacing="10">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                    <ComboBox x:Name="EbookLayoutModeCombo" x:FieldModifier="internal" Header="PDF / image ebook mode">
+                        <x:String>Reflowable text (default)</x:String>
+                        <x:String>Fixed page layout</x:String>
+                    </ComboBox>
+                    <TextBox x:Name="OcrLanguageTextBox" x:FieldModifier="internal" Grid.Column="1" Header="OCR language" PlaceholderText="auto or language tag, for example zh-Hans" />
+                </controls:AdaptiveGrid>
+            </Border>
+
+            <Border controls:CardInteraction.Enable="True" Style="{StaticResource FFCardStyle}">
+                <StackPanel Spacing="12">
+                    <StackPanel Spacing="3">
+                        <TextBlock x:Name="PerformanceTitleText" x:FieldModifier="internal" Text="Performance and acceleration" Style="{StaticResource FFSectionTitleTextStyle}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="PerformanceDescriptionText" x:FieldModifier="internal" Text="Hardware acceleration and CPU settings." TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                    </StackPanel>
+                    <controls:AdaptiveGrid RowSpacing="12" ColumnSpacing="20" AutoStackCompact="True" CompactThreshold="640" WideThreshold="900">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                        <NumberBox x:Name="ParallelCountBox" x:FieldModifier="internal" Header="Parallel tasks" Minimum="1" Maximum="4" SpinButtonPlacementMode="Compact" />
+                        <NumberBox x:Name="CpuThreadsBox" x:FieldModifier="internal" Grid.Column="1" Header="CPU threads per task (0 = automatic)" Minimum="0" Maximum="64" SpinButtonPlacementMode="Compact" />
+                        <ToggleSwitch x:Name="HardwareToggle" x:FieldModifier="internal" Grid.Row="1" Header="Automatic hardware encoding" OnContent="NVENC → QSV → AMD AMF → Media Foundation → CPU" OffContent="CPU only" />
+                        <TextBlock x:Name="CpuStrategyText" x:FieldModifier="internal" Grid.Row="1" Grid.Column="1" Text="Automatically assign CPU threads" VerticalAlignment="Center" TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                        <ToggleSwitch x:Name="NotificationToggle" x:FieldModifier="internal" Grid.Row="2" Header="Task completion notifications" />
+                        <StackPanel Grid.Row="2" Grid.Column="1" Spacing="4">
+                            <ToggleSwitch x:Name="SoundToggle" x:FieldModifier="internal" Header="Notification sound" />
+                            <ToggleSwitch x:Name="TrayToggle" x:FieldModifier="internal" Header="Minimize to tray when closed" />
+                        </StackPanel>
+                    </controls:AdaptiveGrid>
+
+                    <Border x:Name="HardwareSettingsCard" x:FieldModifier="internal"
+                            Background="{ThemeResource LayerFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource SubtleBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="{StaticResource FFCardCornerRadius}"
+                            Padding="{StaticResource FFCardPadding}">
+                        <StackPanel x:Name="HardwareSettingsPanel" x:FieldModifier="internal" Spacing="12">
+                            <controls:AdaptiveGrid ColumnSpacing="12" AutoStackCompact="True" CompactThreshold="640" WideThreshold="900" RowSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="3">
+                                    <TextBlock x:Name="HardwareSettingsTitleText" x:FieldModifier="internal"
+                                               TextWrapping="Wrap" Style="{StaticResource FFSectionTitleTextStyle}" />
+                                    <TextBlock x:Name="HardwareSettingsDescriptionText" x:FieldModifier="internal"
+                                               TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                                </StackPanel>
+                                <Button x:Name="HardwareDecodeTestButton" x:FieldModifier="internal"
+                                        Grid.Column="1"
+                                        Click="HardwareDecodeTestButton_Click"
+                                        VerticalAlignment="Center" />
+                            </controls:AdaptiveGrid>
+
+                            <TextBlock x:Name="HardwareDecodeStatusText" x:FieldModifier="internal"
+                                       FontSize="12"
+                                       Opacity="0.82"
+                                       TextWrapping="Wrap"
+                                       AutomationProperties.LiveSetting="Polite" />
+
+                            <ItemsRepeater x:Name="HardwareCardsRepeater" x:FieldModifier="internal">
+                                <ItemsRepeater.Layout>
+                                    <UniformGridLayout x:Name="HardwareCardsLayout" x:FieldModifier="internal"
+                                                       MinItemWidth="300"
+                                                       MinColumnSpacing="12"
+                                                       MinRowSpacing="12"
+                                                       ItemsStretch="Fill" />
+                                </ItemsRepeater.Layout>
+                                <ItemsRepeater.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border x:Name="HardwareCardItem" x:FieldModifier="internal"
+                                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                                BorderBrush="{ThemeResource SubtleBorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="{StaticResource FFCardCornerRadius}"
+                                                Padding="{StaticResource FFCardPadding}"
+                                                AutomationProperties.Name="{Binding AutomationName}">
+                                            <StackPanel x:Name="HardwareCardContent" x:FieldModifier="internal" Spacing="10">
+                                                <controls:AdaptiveGrid ColumnSpacing="8" AutoStackCompact="True" CompactThreshold="320" WideThreshold="900" RowSpacing="10">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Spacing="2">
+                                                        <TextBlock Text="{Binding KindLabel}" Style="{StaticResource FFSecondaryTextStyle}" />
+                                                        <TextBlock Text="{Binding Name}"
+                                                                   FontWeight="SemiBold"
+                                                                   TextWrapping="Wrap" />
+                                                    </StackPanel>
+                                                    <Border Grid.Column="1"
+                                                            Visibility="{Binding DefaultBadgeVisibility}"
+                                                            Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                                                            CornerRadius="10"
+                                                            Padding="8,3"
+                                                            HorizontalAlignment="Left"
+                                                            VerticalAlignment="Top">
+                                                        <TextBlock Text="{Binding DefaultBadgeText}" FontSize="11" />
+                                                    </Border>
+                                                </controls:AdaptiveGrid>
+
+                                                <TextBlock Text="{Binding Details}"
+                                                           TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                                                <TextBlock Text="{Binding DecoderSectionTitle}"
+                                                           FontSize="12"
+                                                           FontWeight="SemiBold" />
+
+                                                <ItemsControl x:Name="HardwareAcceleratorList" x:FieldModifier="internal"
+                                                              HorizontalContentAlignment="Stretch"
+                                                              ItemsSource="{Binding Accelerators}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                                                    CornerRadius="6"
+                                                                    Padding="10"
+                                                                    Margin="0,0,0,8">
+                                                                <StackPanel Spacing="7">
+                                                                    <TextBlock Text="{Binding Name}"
+                                                                               FontWeight="SemiBold"
+                                                                               FontSize="12"
+                                                                               TextWrapping="Wrap" />
+                                                                    <ItemsControl ItemsSource="{Binding Codecs}" HorizontalContentAlignment="Stretch">
+                                                                        <ItemsControl.ItemTemplate>
+                                                                            <DataTemplate>
+                                                                                <controls:AdaptiveGrid ColumnSpacing="8" MinHeight="24" AutoStackCompact="True" CompactThreshold="240" WideThreshold="900" RowSpacing="10">
+                                                                                    <Grid.ColumnDefinitions>
+                                                                                        <ColumnDefinition Width="*" />
+                                                                                        <ColumnDefinition Width="Auto" />
+                                                                                    </Grid.ColumnDefinitions>
+                                                                                    <TextBlock Text="{Binding DisplayName}"
+                                                                                               FontSize="12"
+                                                                                               TextTrimming="CharacterEllipsis" />
+                                                                                    <StackPanel Grid.Column="1"
+                                                                                                Orientation="Horizontal"
+                                                                                                Spacing="5"
+                                                                                                Opacity="{Binding StatusOpacity}">
+                                                                                        <TextBlock Text="{Binding StatusGlyph}"
+                                                                                                   FontSize="12"
+                                                                                                   FontWeight="SemiBold" />
+                                                                                        <TextBlock Text="{Binding StatusText}"
+                                                                                                   FontSize="12" />
+                                                                                    </StackPanel>
+                                                                                </controls:AdaptiveGrid>
+                                                                            </DataTemplate>
+                                                                        </ItemsControl.ItemTemplate>
+                                                                    </ItemsControl>
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
+                                                <TextBlock Text="{Binding EmptyText}"
+                                                           Visibility="{Binding EmptyVisibility}"
+                                                           TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsRepeater.ItemTemplate>
+                            </ItemsRepeater>
+
+                            <TextBlock x:Name="HardwareInventoryNoticeText" x:FieldModifier="internal"
+                                       Visibility="Collapsed"
+                                       TextWrapping="Wrap"
+                                       AutomationProperties.LiveSetting="Polite" Style="{StaticResource FFSecondaryTextStyle}" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+
+            <Border controls:CardInteraction.Enable="True" Style="{StaticResource FFCardStyle}">
+                <StackPanel Spacing="10">
+                    <StackPanel Spacing="3">
+                        <TextBlock x:Name="StartupTitleText" x:FieldModifier="internal" Text="Startup" Style="{StaticResource FFSectionTitleTextStyle}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="StartupDescriptionText" x:FieldModifier="internal" Text="Start with Windows and keep the app in the system tray." TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                    </StackPanel>
+                    <controls:AdaptiveGrid ColumnSpacing="20" AutoStackCompact="True" CompactThreshold="640" WideThreshold="900" RowSpacing="10">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <ToggleSwitch x:Name="StartWithWindowsToggle" x:FieldModifier="internal" Header="Start with Windows" />
+                        <ToggleSwitch x:Name="StartInTrayToggle" x:FieldModifier="internal" Grid.Column="1" Header="Start in the system tray" />
+                    </controls:AdaptiveGrid>
+                </StackPanel>
+            </Border>
+            <Border controls:CardInteraction.Enable="True" Style="{StaticResource FFCardStyle}">
+                <StackPanel Spacing="10">
+                    <StackPanel Spacing="3">
+                        <TextBlock x:Name="WatchFolderTitleText" x:FieldModifier="internal" Text="Watch folder" Style="{StaticResource FFSectionTitleTextStyle}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="WatchFolderDescriptionText" x:FieldModifier="internal" Text="Automatically add new media files from a folder to the conversion queue." TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                    </StackPanel>
+                    <ToggleSwitch x:Name="WatchFolderToggle" x:FieldModifier="internal" Header="Automatically convert new files" />
+                    <controls:AdaptiveGrid ColumnSpacing="8" AutoStackCompact="True" CompactThreshold="640" WideThreshold="900" RowSpacing="10">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <Button x:Name="WatchFolderPathButton" x:FieldModifier="internal" Click="ChooseWatchFolderButton_Click" HorizontalContentAlignment="Left">
+                            <TextBlock x:Name="WatchFolderPathText" x:FieldModifier="internal" Text="Folder to watch" TextTrimming="CharacterEllipsis" />
+                        </Button>
+                        <Button x:Name="ChooseWatchFolderButton" x:FieldModifier="internal" Grid.Column="1" Click="ChooseWatchFolderButton_Click" Content="Choose folder" />
+                    </controls:AdaptiveGrid>
+                </StackPanel>
+            </Border>
+            <Border controls:CardInteraction.Enable="True" Style="{StaticResource FFCardStyle}">
+                <controls:AdaptiveGrid ColumnSpacing="12" AutoStackCompact="True" CompactThreshold="640" WideThreshold="900" RowSpacing="10">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="220" /></Grid.ColumnDefinitions>
+                    <StackPanel Spacing="3">
+                        <TextBlock x:Name="LanguageTitleText" x:FieldModifier="internal" Text="Language" Style="{StaticResource FFSectionTitleTextStyle}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="LanguageDescriptionText" x:FieldModifier="internal" Text="Use Windows language automatically or choose an app language." TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                    </StackPanel>
+                    <ComboBox x:Name="LanguageCombo" x:FieldModifier="internal"
+                              Grid.Column="1"
+                              DisplayMemberPath="DisplayName"
+                              HorizontalAlignment="Stretch"
+                              SelectionChanged="LanguageCombo_SelectionChanged" />
+                </controls:AdaptiveGrid>
+            </Border>
+            <Border controls:CardInteraction.Enable="True" Style="{StaticResource FFCardStyle}">
+                <controls:AdaptiveGrid ColumnSpacing="12" AutoStackCompact="True" CompactThreshold="640" WideThreshold="900" RowSpacing="10">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="220" /></Grid.ColumnDefinitions>
+                    <StackPanel Spacing="3">
+                         <TextBlock x:Name="ThemeTitleText" x:FieldModifier="internal" Text="Theme" Style="{StaticResource FFSectionTitleTextStyle}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="ThemeDescriptionText" x:FieldModifier="internal" Text="Follow Windows or choose manually." Style="{StaticResource FFSecondaryTextStyle}" />
+                    </StackPanel>
+                    <ComboBox x:Name="ThemeCombo" x:FieldModifier="internal" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="ThemeCombo_SelectionChanged">
+                        <x:String>Use system setting</x:String><x:String>Light</x:String><x:String>Dark</x:String>
+                    </ComboBox>
+                </controls:AdaptiveGrid>
+            </Border>
+
+            <Expander x:Name="EngineOptionsExpander" x:FieldModifier="internal" IsExpanded="False"
+                      HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                <Expander.Header>
+                    <StackPanel Spacing="3">
+                        <TextBlock x:Name="EngineOptionsTitleText" x:FieldModifier="internal" Text="Advanced engine options" TextWrapping="Wrap" Style="{StaticResource FFSectionTitleTextStyle}" />
+                        <TextBlock x:Name="EngineOptionsDescriptionText" x:FieldModifier="internal" Text="Customize engine paths and check optional tools." TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                    </StackPanel>
+                </Expander.Header>
+                <StackPanel Spacing="12" HorizontalAlignment="Stretch">
+                    <Border controls:CardInteraction.Enable="True" Style="{StaticResource FFCardStyle}">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="FFmpeg" Style="{StaticResource FFSectionTitleTextStyle}" TextWrapping="Wrap" />
+                            <TextBlock x:Name="FfmpegDescriptionText" x:FieldModifier="internal" Text="Choose the FFmpeg executable." TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                            <controls:AdaptiveGrid ColumnSpacing="8" AutoStackCompact="True" CompactThreshold="640" WideThreshold="900" RowSpacing="10">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBox x:Name="FfmpegPathTextBox" x:FieldModifier="internal" PlaceholderText="Path to ffmpeg.exe" />
+                                <Button x:Name="BrowseFfmpegButton" x:FieldModifier="internal" Grid.Column="1" Click="BrowseFfmpegButton_Click" Content="Browse" />
+                                <Button x:Name="DetectFfmpegButton" x:FieldModifier="internal" Grid.Column="2" Click="DetectFfmpegButton_Click" Content="Detect automatically" />
+                            </controls:AdaptiveGrid>
+                            <TextBlock x:Name="CompatibilityEngineHelpText" x:FieldModifier="internal" TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                            <controls:AdaptiveGrid ColumnSpacing="8" AutoStackCompact="True" CompactThreshold="640" WideThreshold="900" RowSpacing="10">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <TextBox x:Name="CompatibilityFfmpegPathTextBox" x:FieldModifier="internal" />
+                                <Button x:Name="BrowseCompatibilityFfmpegButton" x:FieldModifier="internal" Grid.Column="1" Click="BrowseCompatibilityFfmpegButton_Click" />
+                            </controls:AdaptiveGrid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border controls:CardInteraction.Enable="True" Style="{StaticResource FFCardStyle}">
+                        <StackPanel Spacing="12">
+                            <controls:AdaptiveGrid ColumnSpacing="12" AutoStackCompact="True" CompactThreshold="640" WideThreshold="900" RowSpacing="10">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <StackPanel Spacing="3">
+                                    <TextBlock x:Name="DocumentEnginesTitleText" x:FieldModifier="internal" Text="Document and ebook engines" Style="{StaticResource FFSectionTitleTextStyle}" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="DocumentEnginesDescriptionText" x:FieldModifier="internal" Text="Bundled document and ebook engines work automatically. Custom paths are optional." TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                                </StackPanel>
+                                <Button x:Name="DetectDocumentEnginesButton" x:FieldModifier="internal" Grid.Column="1" Click="DetectDocumentEnginesButton_Click" Content="Refresh status" VerticalAlignment="Center" />
+                            </controls:AdaptiveGrid>
+                            <ToggleSwitch x:Name="RepairDocxToggle" x:FieldModifier="internal" />
+                            <TextBlock x:Name="RepairDocxHelpText" x:FieldModifier="internal" TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+
+                            <controls:AdaptiveGrid RowSpacing="8" ColumnSpacing="8" AutoStackCompact="True" CompactThreshold="640" WideThreshold="900">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Text="Microsoft Word" VerticalAlignment="Center" />
+                                <TextBlock x:Name="WordEngineStatusText" x:FieldModifier="internal" Grid.Column="1" Text="Detecting…" Opacity="0.82" VerticalAlignment="Center" />
+
+                                <TextBlock Grid.Row="1" Text="LibreOffice" VerticalAlignment="Center" />
+                                <StackPanel Grid.Row="1" Grid.Column="1" Spacing="2">
+                                    <TextBox x:Name="LibreOfficePathTextBox" x:FieldModifier="internal" PlaceholderText="soffice.com path (optional)" />
+                                    <TextBlock x:Name="LibreOfficeEngineStatusText" x:FieldModifier="internal" Text="Not configured" Style="{StaticResource FFSecondaryTextStyle}" />
+                                </StackPanel>
+                                <Button x:Name="BrowseLibreOfficeButton" x:FieldModifier="internal" Grid.Row="1" Grid.Column="2" Click="BrowseLibreOfficeButton_Click" Content="Browse" />
+
+                                <TextBlock Grid.Row="2" Text="Calibre" VerticalAlignment="Center" />
+                                <StackPanel Grid.Row="2" Grid.Column="1" Spacing="2">
+                                    <TextBox x:Name="CalibrePathTextBox" x:FieldModifier="internal" PlaceholderText="ebook-convert.exe path (optional)" />
+                                    <TextBlock x:Name="CalibreEngineStatusText" x:FieldModifier="internal" Text="Not configured" Style="{StaticResource FFSecondaryTextStyle}" />
+                                </StackPanel>
+                                <Button x:Name="BrowseCalibreButton" x:FieldModifier="internal" Grid.Row="2" Grid.Column="2" Click="BrowseCalibreButton_Click" Content="Browse" />
+
+                                <TextBlock x:Name="CajConverterLabelText" x:FieldModifier="internal" Grid.Row="3" Text="CAJ converter" VerticalAlignment="Center" />
+                                <StackPanel Grid.Row="3" Grid.Column="1" Spacing="2">
+                                    <TextBox x:Name="Caj2PdfPathTextBox" x:FieldModifier="internal" PlaceholderText="Custom caj2pdf.exe path (optional)" />
+                                    <TextBlock x:Name="CajEngineStatusText" x:FieldModifier="internal" Text="Not configured" Style="{StaticResource FFSecondaryTextStyle}" />
+                                </StackPanel>
+                                <Button x:Name="BrowseCajButton" x:FieldModifier="internal" Grid.Row="3" Grid.Column="2" Click="BrowseCajButton_Click" Content="Browse" />
+                            </controls:AdaptiveGrid>
+
+
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="OpticalEnginesCard" x:FieldModifier="internal" controls:CardInteraction.Enable="True" Style="{StaticResource FFCardStyle}">
+                        <StackPanel Spacing="12">
+                            <controls:AdaptiveGrid ColumnSpacing="12" AutoStackCompact="True" CompactThreshold="640" WideThreshold="900" RowSpacing="10">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <StackPanel Spacing="3">
+                                    <TextBlock x:Name="OpticalEnginesTitleText" x:FieldModifier="internal" Text="Disc and image engines" Style="{StaticResource FFSectionTitleTextStyle}" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="OpticalEnginesDescriptionText" x:FieldModifier="internal" Text="ISO and CSO conversion is built in. Optional local tools read physical discs." TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                                </StackPanel>
+                                <Button x:Name="DetectOpticalEnginesButton" x:FieldModifier="internal" Grid.Column="1" Click="DetectOpticalEnginesButton_Click" Content="Refresh status" VerticalAlignment="Center" />
+                            </controls:AdaptiveGrid>
+
+                            <controls:AdaptiveGrid RowSpacing="8" ColumnSpacing="8" AutoStackCompact="True" CompactThreshold="640" WideThreshold="900">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Text="MakeMKV" VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBox x:Name="MakeMkvPathTextBox" x:FieldModifier="internal" PlaceholderText="makemkvcon64.exe path (optional)" />
+                                    <TextBlock x:Name="MakeMkvEngineStatusText" x:FieldModifier="internal" Text="Not configured" Style="{StaticResource FFSecondaryTextStyle}" />
+                                    <TextBlock x:Name="MakeMkvInstallHintText" x:FieldModifier="internal" TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                                    <Button x:Name="InstallMakeMkvButton" x:FieldModifier="internal" Content="Install MakeMKV" Click="InstallMakeMkvButton_Click" Visibility="Collapsed" HorizontalAlignment="Left" />
+                                </StackPanel>
+                                <Button x:Name="BrowseMakeMkvButton" x:FieldModifier="internal" Grid.Column="2" Click="BrowseMakeMkvButton_Click" Content="Browse" />
+
+                                <TextBlock x:Name="AudioCdRipperLabelText" x:FieldModifier="internal" Grid.Row="1" Text="Audio CD ripper" VerticalAlignment="Center" />
+                                <StackPanel Grid.Row="1" Grid.Column="1" Spacing="2">
+                                    <TextBox x:Name="AudioCdRipperPathTextBox" x:FieldModifier="internal" PlaceholderText="cdda2wav.exe or icedax.exe path (optional)" />
+                                    <TextBlock x:Name="AudioCdRipperStatusText" x:FieldModifier="internal" Text="Not configured" Style="{StaticResource FFSecondaryTextStyle}" />
+                                </StackPanel>
+                                <Button x:Name="BrowseAudioCdRipperButton" x:FieldModifier="internal" Grid.Row="1" Grid.Column="2" Click="BrowseAudioCdRipperButton_Click" Content="Browse" />
+
+                                <TextBlock Grid.Row="2" Text="readom" VerticalAlignment="Center" />
+                                <StackPanel Grid.Row="2" Grid.Column="1" Spacing="2">
+                                    <TextBox x:Name="ReadomPathTextBox" x:FieldModifier="internal" PlaceholderText="readom.exe path (optional)" />
+                                    <TextBlock x:Name="ReadomEngineStatusText" x:FieldModifier="internal" Text="Not configured" Style="{StaticResource FFSecondaryTextStyle}" />
+                                </StackPanel>
+                                <Button x:Name="BrowseReadomButton" x:FieldModifier="internal" Grid.Row="2" Grid.Column="2" Click="BrowseReadomButton_Click" Content="Browse" />
+                            </controls:AdaptiveGrid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Expander>
+
+            <controls:AdaptiveGrid ColumnSpacing="10" RowSpacing="8" CompactColumns="*,*">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <TextBlock x:Name="SettingsSaveStateText" x:FieldModifier="internal" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" controls:AdaptiveGrid.CompactCell="0,0,1,2" />
+                <Button x:Name="SaveSettingsButton" x:FieldModifier="internal" Grid.Column="1" Click="SaveSettingsButton_Click" Style="{StaticResource AccentButtonStyle}" Content="Save settings" controls:AdaptiveGrid.CompactCell="1,0" />
+                <Button x:Name="OpenLogsButton" x:FieldModifier="internal" Grid.Column="2" Click="OpenLogsButton_Click" Content="Open log folder" Style="{StaticResource LayoutTextButtonStyle}" controls:AdaptiveGrid.CompactCell="1,1" />
+            </controls:AdaptiveGrid>
+            <Border controls:CardInteraction.Enable="True" Style="{StaticResource FFCardStyle}">
+                <controls:AdaptiveGrid ColumnSpacing="12" AutoStackCompact="True" CompactThreshold="640" WideThreshold="900" RowSpacing="10">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <StackPanel Spacing="3">
+                        <TextBlock x:Name="ResetSettingsTitleText" x:FieldModifier="internal" Text="Restore default settings" TextWrapping="Wrap" Style="{StaticResource FFSectionTitleTextStyle}" />
+                        <TextBlock x:Name="ResetSettingsDescriptionText" x:FieldModifier="internal" Text="Restore app preferences and engine paths to their defaults." TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                    </StackPanel>
+                    <Button x:Name="ResetSettingsButton" x:FieldModifier="internal" Grid.Column="1" Click="ResetSettingsButton_Click" Content="Restore defaults" VerticalAlignment="Center" />
+                </controls:AdaptiveGrid>
+            </Border>
+            <Border controls:CardInteraction.Enable="True" Style="{StaticResource FFCardStyle}">
+                <controls:AdaptiveGrid ColumnSpacing="12" AutoStackCompact="True" CompactThreshold="640" WideThreshold="900" RowSpacing="10">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <StackPanel Spacing="3">
+                        <TextBlock x:Name="RateAppTitleText" x:FieldModifier="internal" Text="Rate this app" TextWrapping="Wrap" Style="{StaticResource FFSectionTitleTextStyle}" />
+                        <TextBlock x:Name="RateAppDescriptionText" x:FieldModifier="internal" Text="Share your experience in Microsoft Store." TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                    </StackPanel>
+                    <Button x:Name="RateAppButton" x:FieldModifier="internal" Grid.Column="1" Click="RateAppButton_Click" Content="Rate in Microsoft Store" VerticalAlignment="Center" />
+                </controls:AdaptiveGrid>
+            </Border>
+            <Border x:Name="UpdatesCard" x:FieldModifier="internal" controls:CardInteraction.Enable="True" Style="{StaticResource FFCardStyle}">
+                <StackPanel Spacing="12">
+                    <StackPanel Spacing="3">
+                        <TextBlock x:Name="UpdatesTitleText" x:FieldModifier="internal" Text="App updates" TextWrapping="Wrap" Style="{StaticResource FFSectionTitleTextStyle}" />
+                        <TextBlock x:Name="UpdatesDescriptionText" x:FieldModifier="internal" Text="Automatically check for and download Microsoft Store updates. Downloaded updates install after you exit normally and your work is saved." TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                    </StackPanel>
+                    <ToggleSwitch x:Name="AutomaticUpdatesToggle" x:FieldModifier="internal" Header="Automatic updates" Toggled="AutomaticUpdatesToggle_Toggled" />
+                    <TextBlock x:Name="UpdatesPreferenceHelpText" x:FieldModifier="internal" Text="Changes take effect immediately. This switch controls updates initiated by the app; Microsoft Store automatic updates have a separate system setting." TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                    <TextBlock x:Name="UpdateStatusText" x:FieldModifier="internal" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                    <controls:AdaptiveGrid ColumnSpacing="8" RowSpacing="8" CompactColumns="*">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <Button x:Name="CheckForUpdatesButton" x:FieldModifier="internal" Content="Check for updates" Click="CheckForUpdatesButton_Click" Style="{StaticResource LayoutTextButtonStyle}" />
+                        <Button x:Name="OpenStoreUpdatesButton" x:FieldModifier="internal" Grid.Column="1" Content="Open Microsoft Store updates" Click="OpenStoreUpdatesButton_Click" Style="{StaticResource LayoutTextButtonStyle}" controls:AdaptiveGrid.CompactCell="1,0" />
+                    </controls:AdaptiveGrid>
+                </StackPanel>
+            </Border>
+            <Border x:Name="TelemetryCard" x:FieldModifier="internal" controls:CardInteraction.Enable="True" Style="{StaticResource FFCardStyle}">
+                <StackPanel Spacing="16">
+                    <StackPanel Spacing="3">
+                        <TextBlock x:Name="TelemetryTitleText" x:FieldModifier="internal" Text="Privacy and diagnostics" TextWrapping="Wrap" Style="{StaticResource FFSectionTitleTextStyle}" />
+                        <TextBlock x:Name="TelemetryDescriptionText" x:FieldModifier="internal" Text="Choose what you share to help improve the app. Changes take effect immediately." TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                    </StackPanel>
+                    <StackPanel Spacing="4">
+                        <ToggleSwitch x:Name="UsageTelemetryToggle" x:FieldModifier="internal" Header="Usage telemetry" Toggled="UsageTelemetryToggle_Toggled" />
+                        <TextBlock x:Name="UsageTelemetryDescriptionText" x:FieldModifier="internal" Text="Share feature usage counts, structured activity logs, startup and conversion times, and sampled CPU call stacks. This excludes file names, file contents, and persistent user IDs." TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                    </StackPanel>
+                    <StackPanel Spacing="4">
+                        <ToggleSwitch x:Name="AutomaticErrorReportingToggle" x:FieldModifier="internal" Header="Send error reports automatically" Toggled="AutomaticErrorReportingToggle_Toggled" />
+                        <TextBlock x:Name="AutomaticErrorReportingDescriptionText" x:FieldModifier="internal" Text="Send diagnostic information in the background when errors occur. Original and converted files are not included." TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+            <Border x:Name="FeedbackCard" x:FieldModifier="internal" controls:CardInteraction.Enable="True" Style="{StaticResource FFCardStyle}">
+                <StackPanel Spacing="12">
+                    <StackPanel Spacing="3">
+                        <TextBlock x:Name="FeedbackTitleText" x:FieldModifier="internal" Text="Feedback and error reports" TextWrapping="Wrap" Style="{StaticResource FFSectionTitleTextStyle}" />
+                        <TextBlock x:Name="FeedbackDescriptionText" x:FieldModifier="internal" Text="Send suggestions or report a problem to the developer." TextWrapping="Wrap" Style="{StaticResource FFSecondaryTextStyle}" />
+                    </StackPanel>
+                    <TextBlock x:Name="FeedbackStatusText" x:FieldModifier="internal" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                    <controls:AdaptiveGrid ColumnSpacing="8" RowSpacing="8" CompactColumns="*">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <Button x:Name="SendFeedbackButton" x:FieldModifier="internal" Click="SendFeedbackButton_Click" Content="Send feedback" Style="{StaticResource LayoutTextButtonStyle}" />
+                        <Button x:Name="ReportErrorButton" x:FieldModifier="internal" Grid.Column="1" Click="ReportErrorButton_Click" Content="Report an error" Style="{StaticResource LayoutTextButtonStyle}" controls:AdaptiveGrid.CompactCell="1,0" />
+                        <Button x:Name="ExportErrorReportButton" x:FieldModifier="internal" Grid.Column="2" Click="ExportErrorReportButton_Click" Content="Export error report" Style="{StaticResource LayoutTextButtonStyle}" controls:AdaptiveGrid.CompactCell="2,0" />
+                    </controls:AdaptiveGrid>
+                </StackPanel>
+            </Border>
+            <TextBlock x:Name="FooterText" x:FieldModifier="internal" Text="FluentFormatConverter · Local conversion" Opacity="0.55" FontSize="12" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

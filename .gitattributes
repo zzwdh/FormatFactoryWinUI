@@ -1,0 +1,4 @@
+# The miniz source lock hashes the original upstream bytes.
+/src/FormatFactoryShellExtension.Native/vendor/miniz/LICENSE -text whitespace=cr-at-eol
+/src/FormatFactoryShellExtension.Native/vendor/miniz/miniz.c -text whitespace=cr-at-eol
+/src/FormatFactoryShellExtension.Native/vendor/miniz/miniz.h -text whitespace=cr-at-eol

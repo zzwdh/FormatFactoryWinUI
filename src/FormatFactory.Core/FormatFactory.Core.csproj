@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <RootNamespace>FormatFactoryWinUI</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Models\formats.json" LogicalName="FormatFactoryWinUI.Models.formats.json" />
+    <EmbeddedResource Include="Localization\AdditionalLanguages\*.json" LogicalName="FormatFactoryWinUI.Localization.AdditionalLanguages.%(Filename).json" WithCulture="false" />
+    <InternalsVisibleTo Include="FormatFactory.Engine" />
+    <InternalsVisibleTo Include="FormatFactory.Presentation" />
+    <InternalsVisibleTo Include="FormatFactoryWinUI" />
+    <InternalsVisibleTo Include="FormatFactoryWinUI.Tests" />
+  </ItemGroup>
+</Project>

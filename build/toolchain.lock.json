@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "msvcDirectoryVersion": "14.44.35207",
+  "compilerFileVersion": "19.44.35229.0",
+  "linkerFileVersion": "14.44.35229.0",
+  "windowsSdkVersion": "10.0.28000.0",
+  "sdkToolFileVersion": "10.0.28000.2526",
+  "dotnetSdkVersion": "11.0.100",
+  "dotnetRelease": "11.0.0 (STS)",
+  "dotnetSupportedUntil": "2028-11-14",
+  "supportTimeZone": "Asia/Shanghai",
+  "supportPolicyUrl": "https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core"
+}

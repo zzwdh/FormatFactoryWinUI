@@ -2,47 +2,84 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net11.0-windows10.0.26100.0</TargetFramework>
-    <TargetPlatformMinVersion>10.0.22000.0</TargetPlatformMinVersion>
+    <TargetPlatformMinVersion>$(MinimumDesktopWindowsVersion)</TargetPlatformMinVersion>
     <RootNamespace>FormatFactoryWinUI</RootNamespace>
+    <Product>FluentFormatConverter</Product>
+    <AssemblyTitle>FluentFormatConverter</AssemblyTitle>
+    <Description>FluentFormatConverter</Description>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
-    <Platforms>x64</Platforms>
-    <PlatformTarget>x64</PlatformTarget>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <Platforms>x64;arm64</Platforms>
+    <RuntimeIdentifiers Condition="'$(RuntimeIdentifier)' == ''">win-x64;win-arm64</RuntimeIdentifiers>
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <WindowsAppSDKBackgroundTask>true</WindowsAppSDKBackgroundTask>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>
     <PublishTrimmed>false</PublishTrimmed>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>260824</Version>
-    <AssemblyVersion>26.8.24.0</AssemblyVersion>
-    <FileVersion>26.8.24.0</FileVersion>
-    <InformationalVersion>260824</InformationalVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Platform)' == 'arm64'">
+    <PlatformTarget>arm64</PlatformTarget>
+    <RuntimeIdentifier>win-arm64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Platform)' == 'x64' Or '$(Platform)' == ''">
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1" />
+    <!-- Foundation retains app activation, notifications and background tasks;
+         InteractiveExperiences retains windowing, input and composition. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK.Foundation" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.InteractiveExperiences" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" />
   </ItemGroup>
 
   <ItemGroup>
     <Content Include="Assets\AppIcon.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\AppIcon44.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\AppIcon150.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\JumpList-*.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="feedback-config.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <Target Name="CopyWinUiCompiledResourcesToPublish" AfterTargets="Publish">
+  <ItemGroup>
+    <ProjectReference Include="..\FormatFactory.Core\FormatFactory.Core.csproj" />
+    <ProjectReference Include="..\FormatFactory.Documents\FormatFactory.Documents.csproj" />
+    <ProjectReference Include="..\FormatFactory.Engine\FormatFactory.Engine.csproj" />
+    <ProjectReference Include="..\FormatFactory.Presentation\FormatFactory.Presentation.csproj" />
+    <ProjectReference Include="..\FormatFactory.FilterWorker\FormatFactory.FilterWorker.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <Target Name="CopyFilterWorkerToOutput" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+    <MSBuild Projects="..\FormatFactory.FilterWorker\FormatFactory.FilterWorker.csproj" Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration);Platform=$(Platform);RuntimeIdentifier=$(RuntimeIdentifier);TargetFramework=net11.0">
+      <Output TaskParameter="TargetOutputs" ItemName="_FilterWorkerTarget" />
+    </MSBuild>
+    <PropertyGroup>
+      <_FilterWorkerDirectory>@(_FilterWorkerTarget->'%(RootDir)%(Directory)')</_FilterWorkerDirectory>
+    </PropertyGroup>
     <ItemGroup>
-      <_WinUiCompiledResource Include="$(TargetDir)App.xbf" />
-      <_WinUiCompiledResource Include="$(TargetDir)MainWindow.xbf" />
-      <_WinUiCompiledResource Include="$(TargetDir)FormatFactoryWinUI.pri" />
+      <_FilterWorkerFile Include="$(_FilterWorkerDirectory)\FormatFactory.FilterWorker.*" Exclude="**\*.pdb" />
     </ItemGroup>
-    <Copy SourceFiles="@(_WinUiCompiledResource)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
-    <MakeDir Directories="$(PublishDir)Assets" />
-    <Copy SourceFiles="$(TargetDir)Assets\AppIconSource.png" DestinationFolder="$(PublishDir)Assets" SkipUnchangedFiles="true" />
+    <Error Condition="'@(_FilterWorkerTarget)' == '' Or !Exists('$(_FilterWorkerDirectory)FormatFactory.FilterWorker.dll')"
+           Text="The isolated IFilter worker must be built before copying its runtime files." />
+    <Copy SourceFiles="@(_FilterWorkerFile)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyHostRuntimeFilesToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_HostRuntimeFile Include="$(TargetDir)**\*.xbf" />
+      <_HostRuntimeFile Include="$(TargetDir)FormatFactoryWinUI.pri" />
+      <!-- The worker runs in its own process and shares the published .NET runtime with the host. -->
+      <_HostRuntimeFile Include="$(TargetDir)FormatFactory.FilterWorker.exe;$(TargetDir)FormatFactory.FilterWorker.dll;$(TargetDir)FormatFactory.FilterWorker.deps.json;$(TargetDir)FormatFactory.FilterWorker.runtimeconfig.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_HostRuntimeFile)" DestinationFiles="@(_HostRuntimeFile->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 </Project>

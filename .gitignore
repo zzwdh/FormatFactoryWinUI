@@ -1,7 +1,20 @@
 **/bin/
 **/obj/
-work/
-outputs/*.exe
-outputs/*.zip
+**/TestResults/
+# Local caches, verification evidence and delivery artifacts.
+/work/
+/outputs/
+/tmp/
 *.user
 *.suo
+# Local Store materials, release artifacts and Sentry incident records.
+/docs/store/
+/docs/releases/RELEASE-ARTIFACTS-*.sha256
+/docs/SENTRY-DAILY-RUNBOOK.md
+/docs/SENTRY-WORKLIST.md
+/docs/SENTRY-DIAGNOSTIC-COVERAGE-2026-11-10.md
+/docs/SENTRY-TRIAGE-2026-10-04.md
+/docs/releases/
+/docs/architecture/ENGINEERING-UPGRADE-2026-09-28.md
+/docs/development/REPOSITORY-ORGANIZATION-2026-11-13.md
+/docs/SENTRY-FEEDBACK.md

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "id": "icedax",
+      "version": "1.1.11-1",
+      "archiveName": "icedax-1.1.11-1.tar.bz2",
+      "url": "https://mirrors.kernel.org/sourceware/cygwin/x86_64/release/cdrkit/icedax/icedax-1.1.11-1.tar.bz2",
+      "sha512": "62b4b314b8aeda6d4e3384de29b25cb0cd00ef72d8533fd1bed99fb02850400cd7a907c50876c22ce8b59be2dbd40f0fc7e1797bfde5173ee9b2188d85e07c8b",
+      "sha256": "77E46D78B1DE907A18E8C9573C265FCBB55F3ECF2F8928FDFAF0F79B0AE7EF79",
+      "sourceUrl": "https://mirrors.kernel.org/sourceware/cygwin/x86_64/release/cdrkit/cdrkit-1.1.11-1-src.tar.bz2",
+      "sourceSha512": "ce651c69dfdb7cd224dd985d0168fdedc1f30f01cb967de370bf08f2f363e676463357eb0547535b6834fe57d6e3ec6230c5595cd58dfad9734d7ce7a3968754"
+    },
+    {
+      "id": "wodim",
+      "version": "1.1.11-1",
+      "archiveName": "wodim-1.1.11-1.tar.bz2",
+      "url": "https://mirrors.kernel.org/sourceware/cygwin/x86_64/release/cdrkit/wodim/wodim-1.1.11-1.tar.bz2",
+      "sha512": "4ecd312bb1fd7229804b4dde4e2991d021162e0fa34ed4e18e371e1aabe9db991e0b335176520ea88fedd9eeec38c1c799c7e806b934902cfbf020d9b8f8f5e1",
+      "sha256": "3F61A6CE16054FAB0090D81015E9D12FA16E6051DB730F890B0993742A50BD4F",
+      "sourceUrl": "https://mirrors.kernel.org/sourceware/cygwin/x86_64/release/cdrkit/cdrkit-1.1.11-1-src.tar.bz2",
+      "sourceSha512": "ce651c69dfdb7cd224dd985d0168fdedc1f30f01cb967de370bf08f2f363e676463357eb0547535b6834fe57d6e3ec6230c5595cd58dfad9734d7ce7a3968754"
+    },
+    {
+      "id": "cygwin",
+      "version": "3.6.10-1",
+      "archiveName": "cygwin-3.6.10-1-x86_64.tar.xz",
+      "url": "https://mirrors.kernel.org/sourceware/cygwin/x86_64/release/cygwin/cygwin-3.6.10-1-x86_64.tar.xz",
+      "sha512": "50e5a100f5229eecba279799363a30d599f8c6ad06967eabc4fc8ed9105736576a522539abc250110282cf18da8536d4e408823cc6c0d2abd8692a91d9fd3341",
+      "sha256": "52AD91827B4611AEE82B325C78038CB199A8508C629C36513373BEA1241707E8",
+      "sourceUrl": "https://mirrors.kernel.org/sourceware/cygwin/src/release/cygwin/cygwin-3.6.10-1-src.tar.xz",
+      "sourceSha512": "fa11f0332f97f915b81c189412d83fac8a459653d8941b609e09776a55b3c9f4f669caa0d132f5b2011e924e0ef9922a137b59af9c086d3f052f3ecc318e1e56"
+    }
+  ]
+}

@@ -1,0 +1,324 @@
+<UserControl
+    x:Class="FormatFactoryWinUI.Views.QueueView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:FormatFactoryWinUI.Controls"
+    HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="ms-appx:///Views/PageResources.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <MenuFlyout x:Key="TaskActionsFlyout" Opening="TaskActions_Opening" MenuFlyoutPresenterStyle="{StaticResource FFMenuFlyoutPresenterStyle}">
+                <MenuFlyoutItem x:Name="ContextStartTaskMenuItem" Text="{Binding StartRetryTooltip}" Tag="{Binding Id}" Click="StartTaskButton_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE768;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutItem x:Name="ContextPauseTaskMenuItem" Text="{Binding PauseResumeTooltip}" Tag="{Binding Id}" Click="PauseTaskButton_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE769;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="{Binding PreviewTooltip}" Tag="{Binding Id}" Click="PreviewTaskButton_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE768;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutItem Text="{Binding MediaInfoTooltip}" Tag="{Binding Id}" Click="MediaInfoButton_Click" AutomationProperties.Name="{Binding MediaInfoTooltip}"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE946;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="{Binding CustomSettingsTooltip}" Tag="{Binding Id}" Click="CustomSettings_Click" IsEnabled="{Binding CanEditConversionOptions}"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE713;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutItem Text="{Binding MultipleOutputsTooltip}" Tag="{Binding Id}" Click="MultipleOutputs_Click" IsEnabled="{Binding CanEditConversionOptions}"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8F1;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutItem Text="{Binding ImageColorTooltip}" Tag="{Binding Id}" Click="ImageColorButton_Click" IsEnabled="{Binding CanEditImageColor}"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE790;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutItem Text="{Binding SavePresetTooltip}" Tag="{Binding Id}" Click="SaveTaskPresetButton_Click" AutomationProperties.Name="{Binding SavePresetTooltip}"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74E;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutItem Text="{Binding SaveOutputGroupTooltip}" Tag="{Binding Id}" Click="SaveOutputGroup_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE792;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="{Binding OpenFileTooltip}" Tag="{Binding Id}" Click="OpenOutputFileButton_Click" IsEnabled="{Binding IsOutputReady}"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E5;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutItem Text="{Binding CopyOutputTooltip}" Tag="{Binding Id}" Click="CopyOutputButton_Click" IsEnabled="{Binding IsOutputReady}"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C8;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutItem Text="{Binding RecoverOutputTooltip}" Tag="{Binding Id}" Click="RecoverOutputButton_Click" IsEnabled="{Binding CanRecoverOutput}"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE777;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutItem Text="{Binding OpenOutputTooltip}" Tag="{Binding Id}" Click="OpenOutputButton_Click" AutomationProperties.Name="{Binding OpenOutputTooltip}"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B7;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutItem Text="{Binding ShareOutputTooltip}" Tag="{Binding Id}" Click="ShareOutputButton_Click" AutomationProperties.Name="{Binding ShareOutputTooltip}"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE72D;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutItem Text="{Binding CopyStatusErrorTooltip}" Tag="{Binding Id}" Click="CopyErrorButton_Click" AutomationProperties.Name="{Binding CopyStatusErrorTooltip}"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE9CE;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="{Binding PrioritizeTooltip}" Tag="{Binding Id}" Click="PrioritizeTaskButton_Click" IsEnabled="{Binding CanPrioritizeTask}" AutomationProperties.Name="{Binding PrioritizeTooltip}" ToolTipService.ToolTip="{Binding PrioritizeHint}"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8CB;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutItem Text="{Binding RelocateSourceTooltip}" Tag="{Binding Id}" Click="RelocateSource_Click" IsEnabled="{Binding CanRelocateSource}" AutomationProperties.Name="{Binding RelocateSourceTooltip}"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE721;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutItem Text="{Binding RelocateSourceFolderTooltip}" Tag="{Binding Id}" Click="RelocateSourceFolder_Click" IsEnabled="{Binding CanRelocateSource}" AutomationProperties.Name="{Binding RelocateSourceFolderTooltip}"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B7;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                <MenuFlyoutSeparator />
+                <MenuFlyoutItem Text="{Binding CancelRemoveTooltip}" Tag="{Binding Id}" Click="CancelOrRemoveButton_Click" AutomationProperties.Name="{Binding CancelRemoveTooltip}"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE711;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+            </MenuFlyout>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <Grid x:Name="PageRoot" x:FieldModifier="internal" Background="Transparent" SizeChanged="ConverterView_SizeChanged">
+        <ScrollViewer x:Name="ConverterScrollViewer" x:FieldModifier="internal" Background="Transparent" AllowDrop="True" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <Grid x:Name="ConverterLayout" x:FieldModifier="internal" Height="760" Padding="{StaticResource FFPagePadding}" RowSpacing="12" LayoutUpdated="ConverterLayout_LayoutUpdated">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <controls:AdaptiveGrid Grid.Row="0" ColumnSpacing="8" RowSpacing="10" MediumColumns="*,Auto,Auto" CompactColumns="*,*">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="3" controls:AdaptiveGrid.CompactCell="0,0,1,2">
+                <TextBlock x:Name="BrandTitleText" x:FieldModifier="internal" Text="FluentFormatConverter" Style="{StaticResource FFPageTitleTextStyle}" />
+                <DropDownButton x:Name="QueueSummaryButton" x:FieldModifier="internal" Visibility="Collapsed"
+                                HorizontalAlignment="Left" Padding="0,2,4,2" MinHeight="24"
+                                Background="Transparent" BorderThickness="0">
+                    <TextBlock x:Name="QueueSummaryText" x:FieldModifier="internal" Style="{StaticResource LayoutSecondaryTextStyle}" Visibility="Collapsed" />
+                    <DropDownButton.Flyout>
+                        <Flyout>
+                            <ScrollViewer MaxHeight="320" MaxWidth="400" VerticalScrollBarVisibility="Auto">
+                                <TextBlock x:Name="QueueSummaryDetailsText" x:FieldModifier="internal" TextWrapping="Wrap" />
+                            </ScrollViewer>
+                        </Flyout>
+                    </DropDownButton.Flyout>
+                </DropDownButton>
+            </StackPanel>
+            <Button x:Name="AddFilesButton" x:FieldModifier="internal" Grid.Column="1" Click="AddFilesButton_Click" Padding="16,9" HorizontalAlignment="Stretch" Style="{StaticResource AccentButtonStyle}" controls:AdaptiveGrid.MediumCell="0,1" controls:AdaptiveGrid.CompactCell="1,0">
+                <TextBlock x:Name="AddFilesText" x:FieldModifier="internal" Text="Add files" TextWrapping="Wrap" TextAlignment="Center" />
+            </Button>
+            <DropDownButton Grid.Column="2" Padding="16,9" HorizontalAlignment="Stretch" controls:AdaptiveGrid.MediumCell="0,2" controls:AdaptiveGrid.CompactCell="1,1">
+                <TextBlock x:Name="AddMoreText" x:FieldModifier="internal" Text="More" TextWrapping="Wrap" TextAlignment="Center" />
+                <DropDownButton.Flyout>
+                    <MenuFlyout MenuFlyoutPresenterStyle="{StaticResource FFMenuFlyoutPresenterStyle}">
+                        <MenuFlyoutItem x:Name="AddFolderMenuItem" x:FieldModifier="internal" Text="Add folder" Click="AddFolderButton_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B7;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                        <MenuFlyoutItem x:Name="PasteFilesMenuItem" x:FieldModifier="internal" Text="Paste files" Click="PasteFilesButton_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE77F;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                        <MenuFlyoutItem x:Name="AddOpticalDiscMenuItem" x:FieldModifier="internal" Text="Add disc" Click="AddOpticalDiscButton_Click" Visibility="Collapsed"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE958;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                        <MenuFlyoutSeparator />
+                        <MenuFlyoutItem x:Name="SelectEditableMenuItem" Text="Select idle tasks" Click="SelectEditableTasks_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B3;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                        <MenuFlyoutItem x:Name="ClearSelectionMenuItem" Text="Clear selection" Click="ClearSelection_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8EA;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                        <MenuFlyoutSeparator />
+                        <MenuFlyoutItem x:Name="BatchOptionsMenuItem" Text="Change selected tasks" Click="BatchOptions_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE70F;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                        <MenuFlyoutItem x:Name="BatchCustomSettingsMenuItem" Text="Custom conversion settings" Click="BatchCustomSettings_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE713;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                        <MenuFlyoutItem x:Name="BatchMultipleOutputsMenuItem" Text="Multiple outputs" Click="BatchMultipleOutputs_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8F1;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                        <MenuFlyoutSeparator />
+                        <MenuFlyoutItem x:Name="RetryFailedMenuItem" Text="Retry failed tasks" Click="RetryFailed_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE72C;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                        <MenuFlyoutSubItem x:Name="SortPendingMenuItem" Text="Sort waiting tasks">
+                            <MenuFlyoutSubItem.Icon><FontIcon Glyph="&#xE8CB;" /></MenuFlyoutSubItem.Icon>
+                            <MenuFlyoutItem x:Name="SortNameMenuItem" Text="By file name" Click="SortPendingByName_Click" />
+                            <MenuFlyoutItem x:Name="SortSmallestMenuItem" Text="Smallest first" Click="SortPendingSmallest_Click" />
+                            <MenuFlyoutItem x:Name="SortLargestMenuItem" Text="Largest first" Click="SortPendingLargest_Click" />
+                        </MenuFlyoutSubItem>
+                        <MenuFlyoutSeparator />
+                        <MenuFlyoutItem x:Name="OutputSettingsMenuItem" Text="Output settings" Click="OutputSettings_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B7;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                        <MenuFlyoutItem x:Name="KeyboardShortcutsMenuItem" Text="Keyboard shortcuts" Click="KeyboardShortcuts_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE765;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                    </MenuFlyout>
+                </DropDownButton.Flyout>
+            </DropDownButton>
+        </controls:AdaptiveGrid>
+
+        <StackPanel Grid.Row="1" Spacing="8">
+            <InfoBar x:Name="AppInfoBar" x:FieldModifier="internal" IsOpen="False" IsClosable="True" />
+            <InfoBar x:Name="QueueUndoInfoBar" x:FieldModifier="internal" IsOpen="False" IsClosable="False" AutomationProperties.LiveSetting="Polite">
+                <InfoBar.ActionButton>
+                    <Button x:Name="QueueUndoButton" x:FieldModifier="internal" Click="QueueUndo_Click" />
+                </InfoBar.ActionButton>
+            </InfoBar>
+        </StackPanel>
+
+        <Border Grid.Row="2" Padding="4,8,4,4">
+            <Grid ColumnSpacing="14" RowSpacing="4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="QueueTitleText" x:FieldModifier="internal" Text="Conversion queue" Style="{StaticResource FFSectionTitleTextStyle}" VerticalAlignment="Center" ToolTipService.ToolTip="{Binding Text, ElementName=QueueReorderHintText}" />
+                <TextBlock x:Name="PresetsSummaryText" x:FieldModifier="internal" Grid.Column="1" Text="Presets: Fast / Balanced / Quality / Lossless" Style="{StaticResource FFSecondaryTextStyle}" VerticalAlignment="Center" />
+                <TextBlock x:Name="BatchSelectionText" Grid.Column="1" Style="{StaticResource LayoutSecondaryTextStyle}" VerticalAlignment="Center" />
+                <TextBlock x:Name="HardwareFallbackText" x:FieldModifier="internal" Grid.Column="2" Text="Hardware acceleration" Style="{StaticResource FFSecondaryTextStyle}" VerticalAlignment="Center" />
+                <TextBlock x:Name="QueueReorderHintText" Visibility="Collapsed" Grid.ColumnSpan="3" Style="{StaticResource LayoutSecondaryTextStyle}" TextWrapping="Wrap" />
+                <TextBlock x:Name="ConversionResultsSummaryText" x:FieldModifier="internal" Grid.ColumnSpan="3" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="Collapsed" />
+            </Grid>
+        </Border>
+
+        <Grid x:Name="TaskContentHost" x:FieldModifier="internal" Grid.Row="3" Background="Transparent">
+            <Grid.ContextFlyout>
+                <MenuFlyout MenuFlyoutPresenterStyle="{StaticResource FFMenuFlyoutPresenterStyle}">
+                    <MenuFlyoutItem x:Name="ContextAddFilesMenuItem" Text="Add files" Click="AddFilesButton_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE710;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                    <MenuFlyoutItem x:Name="ContextAddFolderMenuItem" Text="Add folder" Click="AddFolderButton_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8B7;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                    <MenuFlyoutItem x:Name="ContextPasteFilesMenuItem" Text="Paste files" Click="PasteFilesButton_Click"><MenuFlyoutItem.Icon><FontIcon Glyph="&#xE77F;" /></MenuFlyoutItem.Icon></MenuFlyoutItem>
+                </MenuFlyout>
+            </Grid.ContextFlyout>
+            <Border x:Name="EmptyState" x:FieldModifier="internal"
+                    Style="{StaticResource FFCardStyle}"
+                    Padding="24"
+                    Visibility="Visible">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                    <Border Width="48" Height="48" HorizontalAlignment="Center" Background="{ThemeResource FFCommandSurfaceBrush}" BorderBrush="{ThemeResource SubtleBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource FFCardCornerRadius}">
+                        <FontIcon Glyph="&#xE8B7;" FontSize="24" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                    </Border>
+                    <TextBlock x:Name="EmptyStateTitle" x:FieldModifier="internal" Text="No conversion tasks" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                    <TextBlock x:Name="EmptyStateText" x:FieldModifier="internal" Text="Select Add files or drop files anywhere on this page" Style="{StaticResource FFSecondaryTextStyle}" MaxWidth="440" HorizontalAlignment="Center" TextAlignment="Center" />
+                </StackPanel>
+            </Border>
+
+            <ListView x:Name="TaskList" x:FieldModifier="internal" Background="Transparent" AllowDrop="True" CanDragItems="True" DragItemsStarting="TaskList_DragItemsStarting" CanReorderItems="False" SelectionMode="Extended" IsMultiSelectCheckBoxEnabled="True" SelectionChanged="TaskList_SelectionChanged" ContainerContentChanging="TaskList_ContainerContentChanging" Visibility="Collapsed">
+                <ListView.GroupStyle>
+                    <GroupStyle>
+                        <GroupStyle.HeaderContainerStyle>
+                            <Style TargetType="ListViewHeaderItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                            </Style>
+                        </GroupStyle.HeaderContainerStyle>
+                        <GroupStyle.HeaderTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource FFCardStyle}" Padding="16,12" Margin="0,4,0,4" Visibility="{Binding IsGrouped, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <StackPanel Spacing="6">
+                                        <Grid ColumnSpacing="10">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="3">
+                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding Summary}" Style="{StaticResource LayoutSecondaryTextStyle}" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Tag="{Binding Id}" Content="{Binding ToggleLabel}" AutomationProperties.Name="{Binding ToggleLabel}" Click="ToggleOutputGroup_Click" />
+                                        </Grid>
+                                        <ProgressBar Value="{Binding Progress}" Maximum="100" Height="3" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </GroupStyle.HeaderTemplate>
+                    </GroupStyle>
+                </ListView.GroupStyle>
+                <ListView.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <!-- Keep nearby rows ready without a full viewport of heavy off-screen cards. -->
+                        <ItemsStackPanel CacheLength="0.5" />
+                    </ItemsPanelTemplate>
+                </ListView.ItemsPanel>
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="ContextFlyout" Value="{StaticResource TaskActionsFlyout}" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="Margin" Value="0,0,0,8" />
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Border controls:CardInteraction.Enable="True" Style="{StaticResource FFCardStyle}"
+                                AllowDrop="True" DragOver="TaskRow_DragOver" Drop="TaskRow_Drop">
+                            <StackPanel x:Name="TaskCardSurface" Spacing="8">
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding FileName}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding FileName}" />
+                                        <TextBlock Text="{Binding OutputDescription}" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis" Visibility="{Binding HasOutputDescription, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                        <TextBlock Text="{Binding ConversionSettingsSummary}" Style="{StaticResource LayoutSecondaryTextStyle}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding ConversionSettingsSummary}" Visibility="{Binding HasConversionSettingsSummary, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                    </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Right" VerticalAlignment="Top">
+                                    <Button Tag="{Binding Id}" Click="StartTaskButton_Click" MinWidth="36" MinHeight="36" Padding="8" IsEnabled="{Binding IsTargetAvailable}" ToolTipService.ToolTip="{Binding StartRetryTooltip}" AutomationProperties.Name="{Binding StartRetryTooltip}"><FontIcon Glyph="&#xE768;" FontSize="16" /></Button>
+                                    <Button Tag="{Binding Id}" Click="PauseTaskButton_Click" MinWidth="36" MinHeight="36" Padding="8" ToolTipService.ToolTip="{Binding PauseResumeTooltip}" AutomationProperties.Name="{Binding PauseResumeTooltip}"><FontIcon Glyph="&#xE769;" FontSize="16" /></Button>
+                                    <DropDownButton MinHeight="36" Flyout="{StaticResource TaskActionsFlyout}" Content="{Binding MoreActionsTooltip}" AutomationProperties.Name="{Binding MoreActionsTooltip}" ToolTipService.ToolTip="{Binding MoreActionsTooltip}" />
+                                </StackPanel>
+                                </Grid>
+                                <Grid ColumnSpacing="10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding FormatHeader}" Style="{StaticResource FFSecondaryTextStyle}" FontWeight="SemiBold"
+                                               MaxWidth="150" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw" />
+                                    <ComboBox x:Name="TaskOutputFormatCombo" Grid.Column="1" Style="{StaticResource FFSelectorStyle}"
+                                              MinWidth="112" MaxWidth="192" VerticalAlignment="Center"
+                                              ItemsSource="{Binding AvailableFormats}" SelectedItem="{Binding TargetFormat, Mode=TwoWay}"
+                                              IsEnabled="{Binding CanEditConversionOptions}" AutomationProperties.Name="{Binding FormatHeader}" />
+                                    <TextBlock x:Name="TaskOutputSummaryText" Grid.Column="2" Text="{Binding CompactParametersSummary}"
+                                               Style="{StaticResource LayoutSecondaryTextStyle}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center" ToolTipService.ToolTip="{Binding CompactParametersSummary}" />
+                                </Grid>
+                                <controls:TaskProgressBar Progress="{Binding Progress}" State="{Binding State}" Maximum="100" Height="4" AutomationProperties.Name="{Binding StateText}" />
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <Grid ColumnSpacing="10" VerticalAlignment="Center" ToolTipService.ToolTip="{Binding StatusSummary}">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <controls:TaskStatusBadge Text="{Binding StateText}" State="{Binding State}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{Binding StatusMetricsSummary}" Style="{StaticResource LayoutSecondaryTextStyle}" VerticalAlignment="Center" />
+                                    </Grid>
+                                    <ToggleButton x:Name="TaskDetailsToggle" Grid.Column="1" IsChecked="{Binding IsDetailsExpanded, Mode=TwoWay}" MinHeight="32" Padding="8,4" ToolTipService.ToolTip="{Binding CustomSettingsTooltip}" AutomationProperties.Name="{Binding CustomSettingsTooltip}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock Text="{Binding DetailsToggleLabel}" FontSize="12" VerticalAlignment="Center" />
+                                            <FontIcon Glyph="&#xE713;" FontSize="12" AutomationProperties.AccessibilityView="Raw" />
+                                        </StackPanel>
+                                    </ToggleButton>
+                                </Grid>
+                                <TextBlock x:Name="TaskDetailMessageText" Text="{Binding DetailMessage}" TextWrapping="Wrap" ToolTipService.ToolTip="{Binding DetailMessage}" Style="{StaticResource LayoutSecondaryTextStyle}" Visibility="{Binding HasDetailMessage, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                <Button x:Name="TaskFailureActionButton" Tag="{Binding Id}" Click="ResolveFailure_Click" HorizontalAlignment="Left" MaxWidth="320" AutomationProperties.Name="{Binding FailureActionLabel}" Visibility="{Binding HasFailureAction, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <TextBlock Text="{Binding FailureActionLabel}" TextWrapping="Wrap" />
+                                </Button>
+                                <TextBlock x:Name="TaskOutputDirectoryOverrideText" Text="{Binding OutputDirectoryOverride}" ToolTipService.ToolTip="{Binding OutputDirectoryOverride}" TextTrimming="CharacterEllipsis" Style="{StaticResource LayoutSecondaryTextStyle}" Visibility="{Binding HasOutputDirectoryOverride, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                <TextBlock x:Name="TaskResultSummaryText" Text="{Binding ResultSummary}" Style="{StaticResource FFSecondaryTextStyle}" Visibility="{Binding HasResultSummary, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                <StackPanel x:Name="TaskReadOnlyDetails" Spacing="4" Visibility="{Binding CanShowReadOnlyDetails, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <TextBlock Style="{StaticResource LayoutSecondaryTextStyle}">
+                                        <Run Text="{Binding KindText}" /><Run Text=" · " /><Run Text="{Binding FileSizeText}" /><Run Text=" · " /><Run Text="{Binding MediaInfo}" />
+                                    </TextBlock>
+                                </StackPanel>
+                                <StackPanel x:Name="TaskDetailsEditor" Spacing="8" Visibility="{Binding CanShowDetailsEditor, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <TextBlock Style="{StaticResource LayoutSecondaryTextStyle}">
+                                        <Run Text="{Binding KindText}" /><Run Text=" · " /><Run Text="{Binding FileSizeText}" /><Run Text=" · " /><Run Text="{Binding MediaInfo}" />
+                                    </TextBlock>
+                                    <controls:AdaptiveGrid ColumnSpacing="12" RowSpacing="8" CompactColumns="*">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="1.4*" /></Grid.ColumnDefinitions>
+                                        <ComboBox Style="{StaticResource FFSelectorStyle}" ItemsSource="{Binding ModeOptions}" IsEnabled="{Binding CanEditConversionOptions}" DisplayMemberPath="DisplayName" SelectedValuePath="Key" SelectedValue="{Binding ConversionMode, Mode=TwoWay}" Header="{Binding PresetHeader}" HorizontalAlignment="Stretch" AutomationProperties.Name="{Binding PresetHeader}" />
+                                        <ComboBox Style="{StaticResource FFSelectorStyle}" Grid.Column="1" ItemsSource="{Binding AudioTrackOptions}" IsEnabled="{Binding CanEditConversionOptions}" DisplayMemberPath="DisplayName" SelectedIndex="{Binding SelectedAudioTrack, Mode=TwoWay}" Visibility="{Binding IsAudioTrackSelectionVisible, Converter={StaticResource BooleanToVisibilityConverter}}" Header="{Binding AudioTrackHeader}" HorizontalAlignment="Stretch" AutomationProperties.Name="{Binding AudioTrackHeader}" controls:AdaptiveGrid.CompactCell="1,0" />
+                                        <CheckBox x:Name="CompatibleAudioTrackCheckBox" Grid.Row="1" Grid.ColumnSpan="2" IsChecked="{Binding UseCompatibleAudioTrack, Mode=TwoWay}" IsEnabled="{Binding CanUseCompatibleAudioTrack}" Visibility="{Binding IsCompatibleAudioTrackVisible, Converter={StaticResource BooleanToVisibilityConverter}}" ToolTipService.ToolTip="{Binding CompatibleAudioTrackTooltip}" AutomationProperties.Name="{Binding CompatibleAudioTrackHeader}" controls:AdaptiveGrid.CompactCell="2,0">
+                                            <TextBlock Text="{Binding CompatibleAudioTrackHeader}" TextWrapping="Wrap" />
+                                        </CheckBox>
+                                    </controls:AdaptiveGrid>
+                                </StackPanel>
+                                <TextBlock x:Name="PdfDocxNoticeText" Text="{Binding PdfDocxNotice}" TextWrapping="Wrap" Style="{StaticResource LayoutSecondaryTextStyle}" Visibility="{Binding IsPdfDocxNoticeVisible, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                <TextBlock x:Name="CompatibleAudioTrackWarningText" Text="{Binding CompatibleAudioTrackWarning}" TextWrapping="Wrap" Style="{StaticResource LayoutSecondaryTextStyle}" Visibility="{Binding ShowCompatibilityWarning, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                <PasswordBox MaxWidth="420" HorizontalAlignment="Stretch" Header="{Binding PdfPasswordHeader}" AutomationProperties.Name="{Binding PdfPasswordHeader}" Tag="{Binding Id}" PasswordRevealMode="Peek" Visibility="{Binding IsPdfPasswordVisible, Converter={StaticResource BooleanToVisibilityConverter}}" Loaded="PdfPasswordBox_Loaded" DataContextChanged="PdfPasswordBox_DataContextChanged" PasswordChanged="PdfPasswordBox_PasswordChanged" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </Grid>
+
+        <Border x:Name="QueueCommandSurface" x:FieldModifier="internal" Grid.Row="4" Style="{StaticResource FFCardStyle}" Padding="12" Background="{ThemeResource FFCommandSurfaceBrush}">
+            <controls:AdaptiveGrid ColumnSpacing="8" RowSpacing="8" MediumColumns="*,Auto,Auto,Auto" CompactColumns="*,Auto,*">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <DropDownButton x:Name="OutputLocationButton" x:FieldModifier="internal" MinHeight="36" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" controls:AdaptiveGrid.CompactCell="0,0,1,3">
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE8B7;" FontSize="16" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw" />
+                        <TextBlock x:Name="OutputFolderNameText" x:FieldModifier="internal" Grid.Column="1" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    </Grid>
+                    <DropDownButton.Flyout>
+                        <Flyout>
+                            <ScrollViewer MaxHeight="320" VerticalScrollBarVisibility="Auto">
+                                <StackPanel Width="320" Spacing="10">
+                                    <TextBlock x:Name="OutputToText" x:FieldModifier="internal" Text="Output to" FontWeight="SemiBold" />
+                                    <ComboBox x:Name="OutputModeCombo" x:FieldModifier="internal" Style="{StaticResource FFSelectorStyle}" HorizontalAlignment="Stretch" SelectionChanged="OutputModeCombo_SelectionChanged">
+                                        <x:String>Custom folder</x:String><x:String>Source folder</x:String>
+                                    </ComboBox>
+                                    <Button x:Name="OutputDirectoryButton" x:FieldModifier="internal" Click="ChooseOutputDirectoryButton_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                        <TextBlock x:Name="OutputDirectoryText" x:FieldModifier="internal" TextWrapping="Wrap" />
+                                    </Button>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Flyout>
+                    </DropDownButton.Flyout>
+                </DropDownButton>
+                <Button x:Name="PauseAllButton" x:FieldModifier="internal" Grid.Column="1" Click="PauseAllButton_Click" Padding="12,7" MinHeight="36" HorizontalAlignment="Stretch" controls:AdaptiveGrid.CompactCell="1,0">
+                    <TextBlock x:Name="PauseAllText" x:FieldModifier="internal" Text="Pause / resume" TextWrapping="Wrap" TextAlignment="Center" />
+                </Button>
+                <DropDownButton x:Name="QueueOperationsButton" x:FieldModifier="internal" Grid.Column="2" Padding="12,7" MinHeight="36" controls:AdaptiveGrid.CompactCell="1,1">
+                    <TextBlock x:Name="QueueOperationsText" TextWrapping="Wrap" TextAlignment="Center" />
+                    <DropDownButton.Flyout>
+                        <Flyout>
+                            <StackPanel Width="240" Spacing="6">
+                                <Button x:Name="ClearPendingButton" x:FieldModifier="internal" Click="ClearPendingButton_Click" Padding="12,8" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left">
+                                    <TextBlock x:Name="ClearPendingText" x:FieldModifier="internal" Text="Clear pending" TextWrapping="Wrap" />
+                                </Button>
+                                <Button x:Name="StopAllButton" x:FieldModifier="internal" Click="CancelAllButton_Click" Padding="12,8" Content="Stop all" Style="{StaticResource LayoutTextButtonStyle}" />
+                            </StackPanel>
+                        </Flyout>
+                    </DropDownButton.Flyout>
+                </DropDownButton>
+                <Button x:Name="StartAllButton" x:FieldModifier="internal" Grid.Column="3" Click="StartAllButton_Click" Style="{StaticResource AccentButtonStyle}" Padding="16,7" MinHeight="36" HorizontalAlignment="Stretch" controls:AdaptiveGrid.CompactCell="1,2">
+                    <TextBlock x:Name="StartAllText" x:FieldModifier="internal" Text="Start all" TextWrapping="Wrap" TextAlignment="Center" />
+                </Button>
+            </controls:AdaptiveGrid>
+        </Border>
+    </Grid>
+
+        </ScrollViewer>
+    </Grid>
+</UserControl>

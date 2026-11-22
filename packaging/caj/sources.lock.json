@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "architecture": "x64",
+  "sources": [
+    {"id":"caj2pdf","version":"6c4bc32b15ce748d211f45d536f5d5511ef9f368","file":"caj2pdf-6c4bc32b15ce748d211f45d536f5d5511ef9f368.zip","url":"https://codeload.github.com/caj2pdf/caj2pdf/zip/6c4bc32b15ce748d211f45d536f5d5511ef9f368","sha256":"0fdb43cd5625b662a51cc506c36c85ebd339ee641ebe7927f480d7269be5dfac","license":"GLWTPL; component notices retained in source","sourceUrl":"https://github.com/caj2pdf/caj2pdf/tree/6c4bc32b15ce748d211f45d536f5d5511ef9f368"},
+    {"id":"python","version":"3.12.10","file":"python-3.12.10-embed-amd64.zip","url":"https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip","sha256":"4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3","license":"PSF-2.0","sourceUrl":"https://www.python.org/ftp/python/3.12.10/Python-3.12.10.tar.xz"},
+    {"id":"mutool","version":"1.26.2","file":"mupdf-1.26.2-windows.zip","url":"https://casper.mupdf.com/downloads/archive/mupdf-1.26.2-windows.zip","sha256":"fa68af878f6b02d970afa8c87f85f3a5aadfae254893ff57b2b733bfdcca5c9d","license":"AGPL-3.0-or-later","sourceUrl":"https://casper.mupdf.com/downloads/archive/mupdf-1.26.2-source.tar.gz"},
+    {"id":"PyPDF2","version":"2.2.0","file":"PyPDF2-2.2.0-py3-none-any.whl","url":"https://files.pythonhosted.org/packages/3f/1e/9204070476be4b6f598e4c042590385341c6019c862cc73892f31f17b45c/PyPDF2-2.2.0-py3-none-any.whl","sha256":"6167a965a2b44f6e763f0bb2028810898bace2caae5ddd5040a8b57e1c6aaa5a","license":"BSD-3-Clause","sourceUrl":"https://pypi.org/project/PyPDF2/2.2.0/"},
+    {"id":"imagesize","version":"1.3.0","file":"imagesize-1.3.0-py2.py3-none-any.whl","url":"https://files.pythonhosted.org/packages/60/d6/5e803b17f4d42e085c365b44fda34deb0d8675a1a910635930b831c43f07/imagesize-1.3.0-py2.py3-none-any.whl","sha256":"1db2f82529e53c3e929e8926a1fa9235aa82d0bd0c580359c67ec31b2fddaa8c","license":"MIT","sourceUrl":"https://pypi.org/project/imagesize/1.3.0/"},
+    {"id":"Pillow","version":"11.3.0","file":"pillow-11.3.0-cp312-cp312-win_amd64.whl","url":"https://files.pythonhosted.org/packages/8c/ce/e7dfc873bdd9828f3b6e5c2bbb74e47a98ec23cc5c74fc4e54462f0d9204/pillow-11.3.0-cp312-cp312-win_amd64.whl","sha256":"a6444696fce635783440b7f7a9fc24b3ad10a9ea3f0ab66c5905be1c19ccf17d","license":"MIT-CMU; bundled library licenses in wheel metadata","sourceUrl":"https://pypi.org/project/Pillow/11.3.0/"}
+  ]
+}

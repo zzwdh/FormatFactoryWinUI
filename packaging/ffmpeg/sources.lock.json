@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "profile": "formatfactory-compatibility-decode-v1",
+  "architecture": "x64",
+  "librempegCommit": "9c00336e26e45ed1274c9693382b1b1441ccaf6a",
+  "sourceBundle": {
+    "fileName": "mpv-libre-runtime-sources.tar.xz",
+    "url": "https://github.com/Zencok/mpv-libre-runtime/releases/download/runtime-mpv-2a4eb8067c-librempeg-9c00336e26-fb08030026/mpv-libre-runtime-sources.tar.xz",
+    "sha256": "fd6e2e5a914906ac428c879b6b1f8609cf6ee581f92d5da2c1a6b582cc2fbc03"
+  },
+  "excludedSourceEntries": [
+    "./sources/lcms2/src/.libs/liblcms2.la",
+    "./sources/libjxl/tools/benchmark/metrics/dists-rgb.sh",
+    "./sources/libjxl/tools/benchmark/metrics/fsim-rgb.sh",
+    "./sources/libjxl/tools/benchmark/metrics/fsim-y.sh",
+    "./sources/libjxl/tools/benchmark/metrics/gmsd-rgb.sh",
+    "./sources/libjxl/tools/benchmark/metrics/lpips-rgb.sh",
+    "./sources/libjxl/tools/benchmark/metrics/msssim-rgb.sh",
+    "./sources/libjxl/tools/benchmark/metrics/msssim-y.sh",
+    "./sources/libjxl/tools/benchmark/metrics/nlpd-y.sh",
+    "./sources/libjxl/tools/benchmark/metrics/ssim-rgb.sh",
+    "./sources/libjxl/tools/benchmark/metrics/ssim-y.sh",
+    "./sources/libjxl/tools/benchmark/metrics/vif-rgb.sh",
+    "./sources/libjxl/tools/benchmark/metrics/vsi-rgb.sh"
+  ],
+  "dependencies": [
+    {
+      "id": "dav1d",
+      "version": "1.5.4"
+    },
+    {
+      "id": "zlib",
+      "version": "2.3.3",
+      "compatibilityApiVersion": "1.3.1.zlib-ng"
+    },
+    {
+      "id": "libxml2",
+      "version": "2.15.3"
+    },
+    {
+      "id": "brotli",
+      "version": "1.2.0"
+    },
+    {
+      "id": "highway",
+      "version": "1.4.0"
+    },
+    {
+      "id": "lcms2",
+      "version": "2.19"
+    },
+    {
+      "id": "libjxl",
+      "version": "0.12.0"
+    },
+    {
+      "id": "bzip2",
+      "version": "1.1.0"
+    },
+    {
+      "id": "libiconv",
+      "version": "1.19"
+    }
+  ],
+  "configure": [
+    "--toolchain=msvc",
+    "--arch=x86_64",
+    "--enable-gpl",
+    "--enable-version3",
+    "--enable-agpl",
+    "--disable-autodetect",
+    "--disable-debug",
+    "--disable-doc",
+    "--disable-unstable",
+    "--disable-ffplay",
+    "--enable-shared",
+    "--disable-static",
+    "--disable-encoders",
+    "--enable-encoder=ffv1,pcm_s32le,pcm_s16le,wrapped_avframe",
+    "--disable-hwaccels",
+    "--disable-devices",
+    "--disable-avdevice",
+    "--enable-libdav1d",
+    "--enable-libjxl",
+    "--enable-libxml2",
+    "--enable-zlib",
+    "--enable-lcms2",
+    "--enable-schannel",
+    "--extra-version=formatfactory-compat-9c00336e26",
+    "--disable-filters",
+    "--enable-filter=buffer,abuffer,buffersink,abuffersink,format,aformat,scale,aresample,null,anull,transpose,rotate,hflip,vflip,split,asplit,setpts,asetpts,setsar,setdar,crop,pad,fps,trim,atrim,premultiply_dynamic,acl2cl,ardftsrc,asf2sf,apad",
+    "--enable-bzlib",
+    "--enable-iconv",
+    "--extra-libs=iconv.lib"
+  ],
+  "tools": [
+    {
+      "id": "cmake",
+      "version": "3.31.8",
+      "fileName": "cmake-3.31.8-windows-x86_64.zip",
+      "url": "https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-windows-x86_64.zip",
+      "sha256": "81aa9964dbabd71fe02e7ec50472fd3ad56138c49944515ece9001efbff8d719"
+    },
+    {
+      "id": "ninja",
+      "version": "1.12.1",
+      "fileName": "ninja-1.12.1-win.zip",
+      "url": "https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-win.zip",
+      "sha256": "f550fec705b6d6ff58f2db3c374c2277a37691678d6aba463adcbb129108467a"
+    },
+    {
+      "id": "meson",
+      "version": "1.9.1",
+      "fileName": "meson-1.9.1.tar.gz",
+      "url": "https://github.com/mesonbuild/meson/releases/download/1.9.1/meson-1.9.1.tar.gz",
+      "sha256": "4e076606f2afff7881d195574bddcd8d89286f35a17b4977a216f535dc0c74ac"
+    },
+    {
+      "id": "nasm",
+      "version": "3.01",
+      "fileName": "nasm-3.01-win64.zip",
+      "url": "https://www.nasm.us/pub/nasm/releasebuilds/3.01/win64/nasm-3.01-win64.zip",
+      "sha256": "e0ba5157007abc7b1a65118a96657a961ddf55f7e3f632ee035366dfce039ca4"
+    },
+    {
+      "id": "make",
+      "version": "4.4.1-3",
+      "fileName": "make-4.4.1-3-x86_64.pkg.tar.zst",
+      "url": "https://repo.msys2.org/msys/x86_64/make-4.4.1-3-x86_64.pkg.tar.zst",
+      "sha256": "af0bdba17f06fe037f0194069adaa31a8fe45f1a11381501896aea1fae37bd5d"
+    },
+    {
+      "id": "coreutils",
+      "version": "8.32-5",
+      "fileName": "coreutils-8.32-5-x86_64.pkg.tar.zst",
+      "url": "https://repo.msys2.org/msys/x86_64/coreutils-8.32-5-x86_64.pkg.tar.zst",
+      "sha256": "62dfee1c39fd15f99c39802b35e82643bc14fffc16d6c76d4001caa385ec77e3"
+    },
+    {
+      "id": "pkgconf",
+      "version": "3.0.10-1",
+      "fileName": "pkgconf-3.0.10-1-x86_64.pkg.tar.zst",
+      "url": "https://repo.msys2.org/msys/x86_64/pkgconf-3.0.10-1-x86_64.pkg.tar.zst",
+      "sha256": "ab9fdaf563938752aecd8b5495954e1e04f6ac5721a6522b35374e548fc357c2"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "repository": "https://github.com/apache/commons-compress",
+  "commit": "0df4d084182c2c2662b777ee2c3b04a1c42bbc66",
+  "files": [
+    {
+      "file": "split_zip_created_by_zip.z01",
+      "url": "https://raw.githubusercontent.com/apache/commons-compress/0df4d084182c2c2662b777ee2c3b04a1c42bbc66/src/test/resources/COMPRESS-477/split_zip_created_by_zip/split_zip_created_by_zip.z01",
+      "sha256": "976bb2c4c8a9093be32824e0b2d112335581aba733d6103e65fcc63bc1560878"
+    },
+    {
+      "file": "split_zip_created_by_zip.z02",
+      "url": "https://raw.githubusercontent.com/apache/commons-compress/0df4d084182c2c2662b777ee2c3b04a1c42bbc66/src/test/resources/COMPRESS-477/split_zip_created_by_zip/split_zip_created_by_zip.z02",
+      "sha256": "e6cdf0faf9016807160197d017cfd8a59815b5e55c3360f4c98f105ac609dc40"
+    },
+    {
+      "file": "split_zip_created_by_zip.zip",
+      "url": "https://raw.githubusercontent.com/apache/commons-compress/0df4d084182c2c2662b777ee2c3b04a1c42bbc66/src/test/resources/COMPRESS-477/split_zip_created_by_zip/split_zip_created_by_zip.zip",
+      "sha256": "fb86d35f40656889434d6e69b1055d11dfb44d3d68555a74891f187e6dc3333c"
+    },
+    {
+      "file": "file_to_compare_1",
+      "url": "https://raw.githubusercontent.com/apache/commons-compress/0df4d084182c2c2662b777ee2c3b04a1c42bbc66/src/test/resources/COMPRESS-477/split_zip_created_by_zip/file_to_compare_1",
+      "sha256": "1a55a0b44a073253935b4bfa2d5b2f2db36ba6f0d678b06821423514828b75ae"
+    },
+    {
+      "file": "file_to_compare_2",
+      "url": "https://raw.githubusercontent.com/apache/commons-compress/0df4d084182c2c2662b777ee2c3b04a1c42bbc66/src/test/resources/COMPRESS-477/split_zip_created_by_zip/file_to_compare_2",
+      "sha256": "4c4b776bc8256467feda2fd64bc0d3f4bdf1d64ef66910284e7606930fd18555"
+    }
+  ]
+}
