@@ -26,4 +26,5 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
+  <Import Project="..\..\build\ConversionWorker.targets" />
 </Project>

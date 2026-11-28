@@ -111,6 +111,108 @@ public sealed class DocumentArtifactTests
         Assert.Equal(imageBytes, Assert.Single(result.Resources).Content.ToArray());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DocxReader_PreservesUtf16ContentNumberingFootnotesAndPageBreaks(bool bigEndian)
+    {
+        using var directory = new TemporaryDirectory();
+        var path = Path.Combine(directory.Path, "unicode.docx");
+        using (var package = WordprocessingDocument.Create(path, DocumentFormat.OpenXml.WordprocessingDocumentType.Document))
+        {
+            var main = package.AddMainDocumentPart();
+            var numbering = main.AddNewPart<NumberingDefinitionsPart>();
+            numbering.Numbering = new Numbering(
+                new AbstractNum(new Level(new NumberingFormat { Val = NumberFormatValues.Bullet },
+                    new LevelText { Val = "•" }) { LevelIndex = 0 }) { AbstractNumberId = 0 },
+                new NumberingInstance(new AbstractNumId { Val = 0 }) { NumberID = 1 });
+            var notes = main.AddNewPart<FootnotesPart>();
+            notes.Footnotes = new Footnotes(new Footnote(new Paragraph(new Run(new Text("注释😀")))) { Id = 1 });
+            main.Document = new Document(new Body(new Paragraph(
+                new ParagraphProperties(new NumberingProperties(new NumberingLevelReference { Val = 0 },
+                    new NumberingId { Val = 1 })), new Run(new Text("列表"))),
+                new Paragraph(new Run(new Text("文字😀"), new TabChar(), new Text("后续"),
+                    new FootnoteReference { Id = 1 }, new Break { Type = BreakValues.Page }))));
+        }
+        using (var zip = ZipFile.Open(path, ZipArchiveMode.Update))
+        {
+            var part = zip.GetEntry("word/document.xml")!;
+            XDocument xml;
+            using (var input = part.Open()) xml = XDocument.Load(input);
+            part.Delete();
+            using var output = zip.CreateEntry("word/document.xml").Open();
+            using var writer = System.Xml.XmlWriter.Create(output,
+                new System.Xml.XmlWriterSettings { Encoding = new UnicodeEncoding(bigEndian, true), Indent = false });
+            xml.Save(writer);
+        }
+        var document = await new DocxDocumentReader().ReadAsync(path);
+        var list = Assert.Single(document.Blocks.OfType<NormalizedList>());
+        Assert.False(list.Ordered);
+        Assert.Equal("列表", Assert.IsType<NormalizedParagraph>(Assert.Single(list.Items[0].Blocks)).Text);
+        Assert.Contains(document.Blocks, b => b is NormalizedParagraph { Text: "文字😀\t后续" });
+        var note = Assert.Single(document.Blocks.OfType<NormalizedFootnote>());
+        Assert.Equal("footnote-1", note.Id);
+        Assert.Equal("注释😀", Assert.IsType<NormalizedParagraph>(Assert.Single(note.Blocks)).Text);
+        Assert.Single(document.Blocks.OfType<NormalizedPageBreak>());
+    }
+
+    [Fact]
+    public async Task DocxConversionReader_StreamsResourcesToTheOwningWorkspace()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = Path.Combine(directory.Path, "source.docx");
+        var workspace = Path.Combine(directory.Path, "workspace");
+        byte[] bytes = [1, 2, 3, 4];
+        using (var package = WordprocessingDocument.Create(path, DocumentFormat.OpenXml.WordprocessingDocumentType.Document))
+        {
+            var main = package.AddMainDocumentPart();
+            main.Document = new Document(new Body(new Paragraph(new Run(new Text("image")))));
+            using var data = new MemoryStream(bytes);
+            main.AddImagePart(ImagePartType.Png).FeedData(data);
+        }
+        var document = await new DocxDocumentReader().ReadForConversionAsync(path, workspace, null, default);
+        var resource = Assert.Single(document.Resources);
+        Assert.True(resource.Content.IsEmpty);
+        Assert.StartsWith(workspace + Path.DirectorySeparatorChar, resource.ContentPath);
+        using var content = resource.OpenRead();
+        using var copy = new MemoryStream();
+        await content.CopyToAsync(copy);
+        Assert.Equal(bytes, copy.ToArray());
+    }
+
+    [Fact]
+    public async Task DeepTablesRoundTripFromDocxToMarkdownBeyondDefaultJsonDepth()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = Path.Combine(directory.Path, "deep.docx");
+        using (var package = WordprocessingDocument.Create(path, DocumentFormat.OpenXml.WordprocessingDocumentType.Document))
+        {
+            var main = package.AddMainDocumentPart();
+            DocumentFormat.OpenXml.OpenXmlElement element = new Paragraph(new Run(new Text("deep text")));
+            for (var depth = 0; depth < 30; depth++)
+                element = new Table(new TableProperties(), new TableGrid(new GridColumn()), new TableRow(new TableCell(element, new Paragraph())));
+            main.Document = new Document(new Body(element));
+        }
+        var document = await new DocxDocumentReader().ReadAsync(path);
+        var output = Path.Combine(directory.Path, "deep.md");
+        await new MarkdownDocumentWriter().WriteAsync(document, output);
+        Assert.Contains("deep text", await File.ReadAllTextAsync(output));
+    }
+
+    [Fact]
+    public async Task ExcessiveDocumentNestingReportsTheLimitAndLeavesNoOutput()
+    {
+        using var directory = new TemporaryDirectory();
+        NormalizedBlock block = new NormalizedParagraph("inner");
+        for (var i = 0; i < 120; i++)
+            block = new NormalizedTable([new NormalizedTableRow([new NormalizedTableCell([block])])]);
+        var doc = new NormalizedDocument("deep", "en", [new NormalizedSection(null, [block])], []);
+        var output = Path.Combine(directory.Path, "deep.md");
+        var error = await Assert.ThrowsAsync<InvalidDataException>(() => new MarkdownDocumentWriter().WriteAsync(doc, output));
+        Assert.Contains("512", error.Message);
+        Assert.Empty(Directory.GetFileSystemEntries(directory.Path));
+    }
+
     [Fact]
     public async Task PlainTextWriter_UsesUtf8WithoutBom()
     {
@@ -188,6 +290,33 @@ public sealed class DocumentArtifactTests
         var assetPath = Path.Combine(directory.Path, "结果.assets", "封面 image.png");
         Assert.True(File.Exists(assetPath));
         Assert.Equal(new byte[] { 1, 2, 3, 4 }, await File.ReadAllBytesAsync(assetPath));
+    }
+
+    [Fact]
+    public async Task MarkdownWriter_RendersNestedNotesMergedCellsAndUnicodeLinks()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = Path.Combine(directory.Path, "nested.md");
+        var document = new NormalizedDocument("Title", "en", [new NormalizedSection(null, [
+            new NormalizedHeading(1, "TITLE"),
+            new NormalizedParagraph("text\r\n[brackets]"),
+            new NormalizedFootnote("A♥", [new NormalizedParagraph("first"),
+                new NormalizedFootnote("a!", [new NormalizedParagraph("nested")])]),
+            new NormalizedFootnote("A♥", [new NormalizedParagraph("duplicate")]),
+            new NormalizedImage("未附/图.png", "a]b"),
+            new NormalizedTable([new NormalizedTableRow([new NormalizedTableCell(
+                [new NormalizedParagraph("é<&>\n😀")], ColumnSpan: 2, RowSpan: 3)])]),
+            new NormalizedTable([new NormalizedTableRow([new NormalizedTableCell(
+                [new NormalizedParagraph("left|right")])])])
+        ])], []);
+        await new MarkdownDocumentWriter().WriteAsync(document, path);
+        var markdown = await File.ReadAllTextAsync(path);
+        Assert.StartsWith("# TITLE\r\n\r\ntext<br>\\[brackets\\][^A][^A]", markdown, StringComparison.Ordinal);
+        Assert.Contains("![a\\]b](%E6%9C%AA%E9%99%84%2F%E5%9B%BE.png)", markdown);
+        Assert.Contains("<td colspan=\"2\" rowspan=\"3\">&#233;&lt;&amp;&gt;<br>&#128512;</td>", markdown);
+        Assert.Contains("| left\\|right |", markdown);
+        Assert.EndsWith("[^A]:\r\n    first[^a-2]\r\n\r\n[^a-2]:\r\n    nested\r\n", markdown);
+        Assert.DoesNotContain("duplicate", markdown);
     }
 
     [Fact]

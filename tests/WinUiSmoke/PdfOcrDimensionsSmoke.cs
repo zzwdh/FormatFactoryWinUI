@@ -23,7 +23,10 @@ public partial class App
         var tall = Path.Combine(root, "tall.pdf");
         var ordinary = Path.Combine(root, "ordinary.pdf");
         var multiple = Path.Combine(root, "multiple.pdf");
-        WriteDimensionPdf(wide, (13000, 100, "BOUNDARY"));
+        // Place readable labels near both edges. A single word next to the margin
+        // can be rejected by Windows OCR at some display scales even when every glyph survives.
+        WritePdfWithContent(wide, (13000, 100, "BT /F1 40 Tf 120 25 Td (BOUNDARY) Tj ET\n" +
+            "BT /F1 40 Tf 12540 25 Td (BOUNDARY) Tj ET\n"));
         WriteDimensionPdf(tall, (10, 13000, ""));
         WriteDimensionPdf(ordinary, (595, 842, "ORDINARY PAGE"));
         WriteDimensionPdf(multiple, (595, 842, "FIRST PAGE"), (595, 842, "SECOND PAGE"));
@@ -57,8 +60,14 @@ public partial class App
                 var layouts = await new WindowsPdfOcrService().RecognizePageLayoutsAsync(path, new[] { 0 }, "en-US", null, default);
                 Require(layouts.Count == 1 && layouts[0].PixelWidth == bitmap.PixelWidth && layouts[0].PixelHeight == bitmap.PixelHeight,
                     "The real OCR service did not return the recognizer bitmap coordinate space.");
-                if (path == wide) Require(recognized.Text.Contains("BOUNDARY", StringComparison.OrdinalIgnoreCase),
-                    "The wide page content was lost or cropped before OCR.");
+                if (path == wide)
+                {
+                    var labels = recognized.Lines.SelectMany(line => line.Words)
+                        .Where(word => word.Text.Equals("BOUNDARY", StringComparison.OrdinalIgnoreCase)).ToArray();
+                    Require(labels.Any(word => word.BoundingRect.X < bitmap.PixelWidth * .1) &&
+                        labels.Any(word => word.BoundingRect.X > bitmap.PixelWidth * .9),
+                        $"A boundary label was lost from the {bitmap.PixelWidth} × {bitmap.PixelHeight} OCR bitmap.");
+                }
                 evidence.Add(new { fixture = path == wide ? "wide" : "tall", maximum,
                     pageWidth = page.Size.Width, pageHeight = page.Size.Height,
                     requestedWidth = options.DestinationWidth, requestedHeight = options.DestinationHeight,
@@ -111,6 +120,7 @@ public partial class App
                 result.OcrLayout.PixelWidth == result.Width && result.OcrLayout.PixelHeight == result.Height,
                 "OCR-only output did not retain its bounded coordinate space.");
             Require(result.PngContent.Length == 0 && result.PngPath is null &&
+                result.OcrLayout!.Words.Count(word => word.Text.Equals("BOUNDARY", StringComparison.OrdinalIgnoreCase)) == 2 &&
                 result.RecognizedText?.Contains("BOUNDARY", StringComparison.OrdinalIgnoreCase) == true,
                 "OCR-only output encoded an image or lost text.");
             evidence.Add(new { fixture = "ocr-only", result.Width, result.Height, imageBytes = result.PngContent.Length });
@@ -191,7 +201,11 @@ public partial class App
         return SHA256.HashData(pixels);
     }
 
-    private static void WriteDimensionPdf(string path, params (double Width, double Height, string Text)[] pages)
+    private static void WriteDimensionPdf(string path, params (double Width, double Height, string Text)[] pages) =>
+        WritePdfWithContent(path, pages.Select(page => (page.Width, page.Height,
+            page.Text.Length == 0 ? "" : $"BT /F1 40 Tf 30 30 Td ({page.Text}) Tj ET\n")).ToArray());
+
+    private static void WritePdfWithContent(string path, params (double Width, double Height, string Content)[] pages)
     {
         var data = new StringBuilder("%PDF-1.7\n");
         var objects = new List<string>
@@ -205,8 +219,7 @@ public partial class App
         {
             var contentId = objects.Count + 2;
             objects.Add(FormattableString.Invariant($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page.Width} {page.Height}] /Resources << /Font << /F1 {fontId} 0 R >> >> /Contents {contentId} 0 R >>"));
-            var content = page.Text.Length == 0 ? "" : FormattableString.Invariant($"BT /F1 40 Tf 30 30 Td ({page.Text}) Tj ET\n");
-            objects.Add($"<< /Length {Encoding.ASCII.GetByteCount(content)} >>\nstream\n{content}endstream");
+            objects.Add($"<< /Length {Encoding.ASCII.GetByteCount(page.Content)} >>\nstream\n{page.Content}endstream");
         }
         objects.Add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
         var offsets = new List<int>();

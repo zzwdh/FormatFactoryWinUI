@@ -11,8 +11,9 @@
 | [FormatFactory.Documents](FormatFactory.Documents) | 文档转换、工具发现、PDF / DOCX / EPUB 读写与校验 |
 | [FormatFactory.Presentation](FormatFactory.Presentation) | 展示模型、布局和进度批处理 |
 | [FormatFactoryWinUI](FormatFactoryWinUI) | WinUI 页面、窗口、Windows 平台适配和依赖装配 |
+| [FormatFactory.ConversionWorker](FormatFactory.ConversionWorker) | Rust 转换后台，负责媒体与归档转换策略、结构化文档、镜像、队列写入、文件提交和目录监控 |
 | [FormatFactory.FilterWorker](FormatFactory.FilterWorker) | 隔离运行的 IFilter 文本提取进程 |
-| [FormatFactoryShellExtension.Native](FormatFactoryShellExtension.Native) | C++ Explorer 菜单、EPUB 缩略图和预览 |
+| [FormatFactoryShellExtension.Native](FormatFactoryShellExtension.Native) | Explorer 的 C++ COM 入口、缩略图和预览，以及静态链接的 Rust EPUB 归档读取器 |
 
 ## Core
 

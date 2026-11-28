@@ -27,7 +27,7 @@ public sealed class ExternalDocumentConverter
     {
         _calibreValidator = calibreValidator ?? throw new ArgumentNullException(nameof(calibreValidator));
         _runProcess = runProcess ?? (static (executable, arguments, timeout, token) =>
-            ProcessRunner.RunLoggedAsync(executable, arguments, timeout, token));
+            ProcessRunner.RunConverterLoggedAsync(executable, arguments, timeout, token));
     }
 
     public async Task<ExternalConversionResult> ConvertWithLibreOfficeAsync(
@@ -332,7 +332,7 @@ public sealed class ExternalDocumentConverter
             throw new InvalidDataException(LocalizationService.T("ConversionUiConverterNoValidOutput"));
         }
 
-        File.Move(stagedPath, outputPath, overwrite: false);
+        OutputRecoveryService.Publish(stagedPath, outputPath, false);
     }
 
     private static async Task ValidatePdfIfRequiredAsync(

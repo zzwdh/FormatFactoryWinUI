@@ -1,6 +1,6 @@
 # FluentFormatConverter
 
-FluentFormatConverter 是使用 WinUI 3 构建的 Windows 本地批量格式转换工具。当前源码版本为 [26.11.20.0](VERSION)。
+FluentFormatConverter 是使用 WinUI 3 构建的 Windows 本地批量格式转换工具。当前源码版本为 [26.11.28.0](VERSION)。
 
 - 转换视频、音频、图片、文档、电子书、压缩包和光盘镜像。
 - 支持拖放、剪贴板和资源管理器导入，并提供格式选择、批量队列、自定义参数及输出命名。
@@ -11,7 +11,7 @@ FluentFormatConverter 是使用 WinUI 3 构建的 Windows 本地批量格式转�
 
 安装包支持 Windows 10 22H2（内部版本 19045）及 Windows 11，包含 x64 和 ARM64。Windows 10 ARM64 使用原生转换引擎。仅提供 x64 版本的附带工具在 ARM64 上需要 Windows 11 的 x64 仿真支持。
 
-从源码构建需要 Windows 11、.NET SDK 11.0.100、PowerShell 7、Windows SDK，以及包含 x64 和 ARM64 C++ 工具的 Visual Studio Build Tools。
+从源码构建需要 Windows 11、.NET SDK 11.0.100、PowerShell 7、Windows SDK，以及包含 x64 和 ARM64 C++ 工具的 Visual Studio Build Tools。转换后台与 Explorer 的 EPUB 读取组件还需要通过 rustup 安装 Rust 1.90.0 的 MSVC 工具链。x64 构建使用 `x86_64-pc-windows-msvc` 目标，ARM64 构建使用 `aarch64-pc-windows-msvc` 目标。具体工具版本见 [工具链清单](build/toolchain.lock.json)。
 
 ## 构建与测试
 

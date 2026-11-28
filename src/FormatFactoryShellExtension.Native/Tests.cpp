@@ -15,11 +15,11 @@ static std::vector<uint8_t> Png(){
     ComPtr<IWICBitmapFrameEncode> frame;Check(encoder->CreateNewFrame(&frame,nullptr));Check(frame->Initialize(nullptr));Check(frame->SetSize(2,2));auto format=GUID_WICPixelFormat24bppBGR;Check(frame->SetPixelFormat(&format));
     std::array<BYTE,12> pixels{30,60,90,30,60,90,30,60,90,30,60,90};Check(frame->WritePixels(2,6,static_cast<UINT>(pixels.size()),pixels.data()));Check(frame->Commit());Check(encoder->Commit());return ReadStream(stream.Get());
 }
-struct BookOptions {bool cover=true,epub2=false,duplicate=false;std::string href="cover.png",chapter="<!DOCTYPE html><html><body><h1>First chapter</h1><p>Readable text.</p><script>script text</script></body></html>";unsigned extras=0;};
+struct BookOptions {bool cover=true,epub2=false,duplicate=false;std::string href="cover.png",chapter="<!DOCTYPE html><html><body><h1>First chapter</h1><p>Readable text.</p><script>script text</script></body></html>";unsigned extras=0; bool stored=false;};
 static std::vector<uint8_t> Book(const BookOptions& options={}){
     mz_zip_archive archive{};Require(mz_zip_writer_init_heap(&archive,0,0)!=0);
     try{
-        auto entry=[&](const char* path,const void* bytes,size_t count){Require(mz_zip_writer_add_mem(&archive,path,bytes,count,static_cast<mz_uint>(MZ_DEFAULT_COMPRESSION))!=0);};
+        auto entry=[&](const char* path,const void* bytes,size_t count){Require(mz_zip_writer_add_mem(&archive,path,bytes,count,options.stored ? 0u : static_cast<mz_uint>(MZ_DEFAULT_COMPRESSION))!=0);};
         auto text=[&](const char* path,const std::string& value){entry(path,value.data(),value.size());};
         text("mimetype","application/epub+zip");text("META-INF/container.xml","<container xmlns='urn:oasis:names:tc:opendocument:xmlns:container'><rootfiles><rootfile full-path='OPS/book.opf'/></rootfiles></container>");
         std::string package="<package xmlns='http://www.idpf.org/2007/opf'><metadata xmlns:dc='http://purl.org/dc/elements/1.1/'><dc:title>A real book</dc:title><dc:creator>Test author</dc:creator>";
@@ -124,6 +124,20 @@ int wmain(int argc,wchar_t** argv){
         Test("Archive-local paths and percent-decoded traversal",[]{Assert(ResolvePath("OPS/book.opf","images/../cover.png#fragment")=="OPS/cover.png","resolution mismatch");for(auto path:{"https://example.test/x","../../x","%2f%2fexample.test/x","https%3a//example.test/x","%00x","bad%Q0"})Reject([&]{ResolvePath("OPS/book.opf",path);});BookOptions o;o.href="../../cover.png";Reject([&]{ReadEpub(Book(o));});});
         Test("XML entities and external resources rejected",[]{BookOptions o;o.chapter="<!DOCTYPE html [<!ENTITY secret SYSTEM 'file:///C:/Windows/win.ini'>]><html><body>&secret;</body></html>";Reject([&]{ReadEpub(Book(o));});});
         Test("XML size and expansion budget",[]{BookOptions o;o.chapter=std::string(MaxXml+1,'a');Reject([&]{ReadEpub(Book(o));});});
+        Test("Stored ZIP resources and CRC validation",[]{
+            BookOptions options; options.stored=true;
+            auto bytes=Book(options);
+            Assert(ReadEpub(bytes).title==L"A real book","Stored entries were not read");
+            const std::string payload="application/epub+zip";
+            auto start=std::search(bytes.begin(),bytes.end(),payload.begin(),payload.end());
+            Assert(start!=bytes.end(),"Stored MIME bytes missing");
+            // The modified chapter remains valid XML. Its stored CRC must reject it.
+            const std::string chapter="First chapter";
+            start=std::search(bytes.begin(),bytes.end(),chapter.begin(),chapter.end());
+            Assert(start!=bytes.end(),"Stored chapter bytes missing");
+            *start='f';
+            Reject([&]{ReadEpub(bytes);});
+        });
         Test("Duplicate ZIP resources rejected",[]{BookOptions o;o.duplicate=true;Reject([&]{ReadEpub(Book(o));});});
         Test("Forged directory count and ZIP64 rejected",[]{auto bytes=Book();auto eocd=bytes.size()-22;bytes[eocd+8]=bytes[eocd+9]=bytes[eocd+10]=bytes[eocd+11]=0;Reject([&]{ReadEpub(bytes);});bytes=Book();eocd=bytes.size()-22;for(size_t i=0;i<4;++i)bytes[eocd+16+i]=255;Reject([&]{ReadEpub(bytes);});});
         Test("Entry count is bounded before materialization",[]{BookOptions o;o.extras=4096;Reject([&]{ReadEpub(Book(o));});});

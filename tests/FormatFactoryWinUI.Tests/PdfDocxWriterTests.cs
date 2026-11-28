@@ -62,6 +62,32 @@ public sealed class PdfDocxWriterTests
         Assert.Equal("zh-CN", styles.Descendants<Languages>().Single().Val!.Value);
     }
 
+    [Fact]
+    public async Task StreamingWriter_PreservesSurrogatePairsAtPipeAndDecoderBoundaries()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = Path.Combine(directory.Path, "boundaries.docx");
+        var text = new string('a', 4095) + "😀" + new string('b', 12286) + "😀\ufffd";
+        await new PdfDocxWriter().WriteAsync(Document(text), path);
+        using var package = WordprocessingDocument.Open(path, false);
+        var body = Assert.IsType<Body>(package.MainDocumentPart?.Document?.Body);
+        Assert.Equal(text, body.InnerText);
+    }
+
+    [Fact]
+    public async Task ClipboardDocxKeepsHeadingInBodyAndHasNoLanguageOverride()
+    {
+        using var directory = new TemporaryDirectory();
+        var path = Path.Combine(directory.Path, "clipboard.docx");
+        await PlainTextDocxWriter.WriteAsync(path, "Clipboard", "第1行\r\n第2行");
+        using var package = WordprocessingDocument.Open(path, false);
+        var main = Assert.IsType<MainDocumentPart>(package.MainDocumentPart);
+        var body = Assert.IsType<Body>(main.Document?.Body);
+        Assert.Equal(new[] { "Clipboard", "第1行", "第2行" }, body.Elements<Paragraph>().Select(p => p.InnerText));
+        Assert.Null(main.StyleDefinitionsPart);
+        Assert.Null(package.PackageProperties.Title);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -14,3 +14,4 @@ internal static class HistoryReuseLocalizationResources
         new("HistoryOutputMissing", ["The output has been moved or deleted: {0}.", "输出文件已被移动或删除：{0}。", "輸出檔案已被移動或刪除：{0}。", "出力が移動または削除されています：{0}。", "출력 파일이 이동되거나 삭제되었습니다: {0}.", "El archivo de salida se movió o eliminó: {0}.", "Le résultat a été déplacé ou supprimé : {0}.", "Ausgabe wurde verschoben oder gelöscht: {0}.", "O resultado foi movido ou excluído: {0}.", "Результат перемещён или удалён: {0}.", "Il risultato è stato spostato o eliminato: {0}.", "Uitvoer is verplaatst of verwijderd: {0}.", "Plik wynikowy został przeniesiony lub usunięty: {0}.", "Çıktı taşındı veya silindi: {0}.", "تم نقل الإخراج أو حذفه: {0}."])
     ]);
 }
+

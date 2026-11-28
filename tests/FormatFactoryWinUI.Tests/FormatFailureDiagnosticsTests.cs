@@ -50,13 +50,15 @@ public sealed class FormatFailureDiagnosticsTests
         BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(16), 2048);
         bytes[20] = headerSize == 0 ? (byte)2 : (byte)1;
         var original = bytes.ToArray();
-        using var input = new MemoryStream(bytes, writable: false);
-        var error = await Assert.ThrowsAsync<InvalidDataException>(() => CsoImageCodec.ReadLayoutAsync(input, CancellationToken.None));
+        using var directory = new TemporaryDirectory();
+        var path = Path.Combine(directory.Path, "header.cso");
+        await File.WriteAllBytesAsync(path, bytes);
+        var error = await Assert.ThrowsAsync<InvalidDataException>(() => new DiscImageConverter().ConvertCsoToIsoAsync(path, Path.Combine(directory.Path, "decode.iso")));
         var line = FormatFailureDiagnostics.Format(error)!;
         Assert.Contains("stage=CsoHeader reason=" + reason, line);
         Assert.Contains("header_size=" + headerSize, line);
         Assert.Contains("total_bytes=2048 block_size=2048", line);
-        Assert.Equal(original, bytes);
+        Assert.Equal(original, await File.ReadAllBytesAsync(path));
     }
 
     [Fact]

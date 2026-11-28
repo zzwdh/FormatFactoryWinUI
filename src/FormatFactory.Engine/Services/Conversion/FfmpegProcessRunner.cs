@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Globalization;
-using System.Text;
 using FormatFactoryWinUI.Models;
 
 namespace FormatFactoryWinUI.Services;
@@ -24,28 +23,14 @@ internal sealed class FfmpegProcessRunner
         Action<ConversionProgress> report,
         CancellationToken cancellationToken)
     {
-        var startInfo = new ProcessStartInfo(executable)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8
-        };
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
         LogService.AppendTask(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {executable} {string.Join(' ', arguments.Select(Quote))}{Environment.NewLine}{Environment.NewLine}");
         var observation = Guid.NewGuid();
         var attempt = Interlocked.Increment(ref _attempt);
         var diagnostic = new EncoderProcessDiagnostics(task.Id, observation, attempt, logPath);
         var started = Stopwatch.GetTimestamp();
         LogService.AppendTask(logPath, RuntimeFailureDiagnostics.TaskFacts(task, observation));
-        ExternalProcessLifetime lifetime;
-        try { lifetime = ExternalProcessLifetime.Start(startInfo, cancellationToken, diagnostic.LifetimeSignal); }
+        ConversionWorkerLaunch launch;
+        try { launch = await ConversionWorkerLaunch.StartAsync(executable, arguments, diagnostic.LifetimeSignal, cancellationToken); }
         catch (Exception processError)
         {
             var elapsedMs = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
@@ -59,15 +44,16 @@ internal sealed class FfmpegProcessRunner
             }
             throw;
         }
-        using var processLifetime = lifetime;
+        using var ownedLaunch = launch;
+        var lifetime = launch.Lifetime;
         var process = lifetime.Process;
-        diagnostic.Started(process, executable);
-        using var active = new ActiveConversionProcess(process, lifetime.Job);
+        diagnostic.Started(launch.Child, executable, launch.ChildId);
+        using var active = launch.Child is { } encoder ? new ActiveConversionProcess(encoder, lifetime.Job) : null;
         using var registration = cancellationToken.Register(() =>
         {
             var requestedAt = DateTimeOffset.UtcNow;
             diagnostic.MarkCancellationRequest();
-            try { active.TryTerminate(); }
+            try { active?.TryTerminate(); }
             finally { diagnostic.WriteCancellationRequest(requestedAt); }
         });
         _activeProcess = active;
@@ -90,8 +76,8 @@ internal sealed class FfmpegProcessRunner
         finally
         {
             _activeProcess = null;
-            diagnostic.Finished(process, progressTask, errorTask, waitError,
-                (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds, cancellationToken.IsCancellationRequested);
+            diagnostic.Finished(launch.Child, progressTask, errorTask, waitError,
+                (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds, cancellationToken.IsCancellationRequested, process);
         }
 
         var exitCode = process.ExitCode;

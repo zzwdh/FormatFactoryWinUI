@@ -18,3 +18,5 @@
 /docs/architecture/ENGINEERING-UPGRADE-2026-09-28.md
 /docs/development/REPOSITORY-ORGANIZATION-2026-11-13.md
 /docs/SENTRY-FEEDBACK.md
+/src/FormatFactory.ConversionWorker/target/
+/src/FormatFactoryShellExtension.Native/rust/target/

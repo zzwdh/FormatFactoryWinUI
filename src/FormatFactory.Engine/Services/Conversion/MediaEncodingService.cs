@@ -40,72 +40,75 @@ internal sealed class MediaEncodingService(RunMediaProcess runProcess,
     private async Task<ConversionResult?> EncodeMediaAttemptsAsync(MediaTask task, string ffmpegPath, string temporaryPath,
         string logPath, PreparedMediaConversion prepared, Action<ConversionProgress> report, CancellationToken cancellationToken)
     {
-        var mediaOptions = prepared.Options;
-        var settings = prepared.Settings;
-        var isFrameSequence = FormatCatalog.IsFrameSequence(task.TargetFormat);
-        var attempts = await BuildAttemptsAsync(task, ffmpegPath, settings, cancellationToken);
-        var cpuThreads = PerformanceTuning.ResolveCpuThreads(settings);
-        var encodingOptions = MediaSizeBudget.Initial(task, mediaOptions);
-        var sizeAttempts = mediaOptions.TargetSizeBytes.HasValue ? MediaSizeBudget.MaximumMediaAttempts : 1;
-
-        FfmpegProcessResult? lastRun = null;
-        var attemptNumber = 0;
-        for (var sizeAttempt = 1; sizeAttempt <= sizeAttempts; sizeAttempt++)
+        var options = prepared.Options;
+        var threads = PerformanceTuning.ResolveCpuThreads(prepared.Settings);
+        var frameSequence = FormatCatalog.IsFrameSequence(task.TargetFormat);
+        var plan = await PresetService.DescribeAsync(task, temporaryPath, EncoderBackend.Cpu, false, threads, cancellationToken, options);
+        var available = await ProbeEncodersAsync(task, ffmpegPath, prepared.Settings, cancellationToken);
+        var begin = new
         {
-            foreach (var attempt in attempts)
+            mode = "encode", plan, available, sourceCodec = task.Probe.VideoCodec,
+            decodeAvailable = HardwareAccelerationTestService.SupportsHardwareDecode(task.Probe.VideoCodec),
+            budget = options.TargetSizeBytes is { } limit ? MediaSizeBudget.Describe(task, options, limit, null) : null
+        };
+
+        using var session = new MediaWorkerSession(cancellationToken);
+        FfmpegProcessResult? last = null;
+        await session.SendAsync(begin);
+        while (true)
+        {
+            var step = await session.ReadAsync<SessionEvent>();
+            switch (step.Event)
             {
-                var backend = attempt.Backend;
-                cancellationToken.ThrowIfCancellationRequested();
-
-                DeleteIfExists(temporaryPath);
-                if (isFrameSequence) Directory.CreateDirectory(temporaryPath);
-                var backendName = backend switch
-                {
-                    EncoderBackend.Nvidia => "NVIDIA NVENC",
-                    EncoderBackend.Intel => "Intel Quick Sync",
-                    EncoderBackend.Amd => "AMD AMF",
-                    EncoderBackend.MediaFoundation => "Windows Media Foundation",
-                    _ => $"CPU · {cpuThreads} threads"
-                };
-                var pathName = prepared.CopiedStreams is not null ? LocalizationService.T("RemuxCopying")
-                    : attempt.HardwareDecode ? LocalizationService.T("GpuDecode", backendName) : backendName;
-                report(new ConversionProgress(0, "—", "—", pathName));
-                var arguments = _presetService.BuildArguments(task, temporaryPath, backend, attempt.HardwareDecode,
-                    cpuThreads, cancellationToken, encodingOptions);
-                attemptNumber++;
-                NativeDiagnostics.Log.EncoderAttempt(task.Id.ToString("N"), backend.ToString(),
-                    attempt.HardwareDecode, attemptNumber, attemptNumber > 1);
-                var progress = mediaOptions.TargetSizeBytes.HasValue
-                    ? new Action<ConversionProgress>(value => report(value with
-                    { Message = LocalizationService.T("MediaSizeAttempt", sizeAttempt, sizeAttempts) })) : report;
-                lastRun = await _runProcess(task, ffmpegPath, arguments, logPath, progress, cancellationToken);
-                if (lastRun.ExitCode == 0 && HasOutput(temporaryPath, isFrameSequence)) break;
-
-                if (cancellationToken.IsCancellationRequested)
-                    return CancelledResult(logPath);
-
-                if (backend != EncoderBackend.Cpu && !attempts.SkipWhile(item => item != attempt).Skip(1).Any(item => item.Backend == backend))
-                    report(new ConversionProgress(0, "—", "—", LocalizationService.T("BackendFallback", backendName)));
+                case "run":
+                    cancellationToken.ThrowIfCancellationRequested();
+                    DeleteIfExists(temporaryPath);
+                    if (frameSequence) Directory.CreateDirectory(temporaryPath);
+                    var name = BackendName(step.Backend, threads);
+                    var pathName = prepared.CopiedStreams is not null ? LocalizationService.T("RemuxCopying")
+                        : step.HardwareDecode ? LocalizationService.T("GpuDecode", name) : name;
+                    report(new(0, "—", "—", pathName));
+                    NativeDiagnostics.Log.EncoderAttempt(task.Id.ToString("N"), step.Backend!, step.HardwareDecode,
+                        step.Number, step.Number > 1);
+                    var progress = options.TargetSizeBytes.HasValue
+                        ? new Action<ConversionProgress>(value => report(value with
+                            { Message = LocalizationService.T("MediaSizeAttempt", step.SizeAttempt, step.SizeAttempts) })) : report;
+                    last = await _runProcess(task, ffmpegPath, step.Arguments!, logPath, progress, cancellationToken);
+                    if (cancellationToken.IsCancellationRequested && last.ExitCode != 0)
+                        return new(false, true, string.Empty, LocalizationService.T("Cancelled"), logPath);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await session.SendAsync(new { exitCode = last.ExitCode });
+                    break;
+                case "fallback":
+                    report(new(0, "—", "—", LocalizationService.T("BackendFallback", BackendName(step.Backend, threads))));
+                    break;
+                case "measured":
+                    RuntimeFailureDiagnostics.WriteTaskObservation(logPath,
+                        $"Output size attempt: task={task.Id:N} attempt={step.SizeAttempt} maximum_bytes={step.Limit} actual_bytes={step.Actual} duration_ticks={task.Probe.Duration.Ticks} video_kbps={RuntimeFailureDiagnostics.Number(step.VideoBitrate)} audio_kbps={RuntimeFailureDiagnostics.Number(step.AudioBitrate)}\n");
+                    break;
+                case "failed":
+                case "complete":
+                case "error":
+                    await session.CompleteAsync();
+                    if (step.Event == "complete") return null;
+                    if (step.Event == "error") throw new InvalidDataException(LocalizationService.T(step.Key!));
+                    DeleteIfExists(temporaryPath);
+                    var message = FfmpegErrorCapture.BuildFailureMessage(task, last?.LastErrorLines ?? [], last?.FailureDetail);
+                    return new(false, false, string.Empty, message, logPath);
+                default:
+                    throw new InvalidDataException("Unknown encoding session event.");
             }
-
-            if (lastRun is null || lastRun.ExitCode != 0 || !HasOutput(temporaryPath, isFrameSequence)) break;
-            if (mediaOptions.TargetSizeBytes is not { } limit) break;
-            var measuredBytes = new FileInfo(temporaryPath).Length;
-            RuntimeFailureDiagnostics.WriteTaskObservation(logPath,
-                $"Output size attempt: task={task.Id:N} attempt={sizeAttempt} maximum_bytes={limit} actual_bytes={measuredBytes} duration_ticks={task.Probe.Duration.Ticks} video_kbps={RuntimeFailureDiagnostics.Number(encodingOptions.VideoBitrateKbps)} audio_kbps={RuntimeFailureDiagnostics.Number(encodingOptions.AudioBitrateKbps)}\n");
-            if (measuredBytes <= limit) break;
-            if (sizeAttempt == sizeAttempts) throw MediaSizeBudget.CannotMeet();
-            encodingOptions = MediaSizeBudget.Reduce(task, encodingOptions, measuredBytes);
         }
-
-        if (lastRun is null || lastRun.ExitCode != 0 || !HasOutput(temporaryPath, isFrameSequence))
-        {
-            var message = FfmpegErrorCapture.BuildFailureMessage(task, lastRun?.LastErrorLines ?? [], lastRun?.FailureDetail);
-            DeleteIfExists(temporaryPath);
-            return new ConversionResult(false, false, string.Empty, message, logPath);
-        }
-        return null;
     }
+
+    private sealed record SessionEvent(string Event, string[]? Arguments, string? Backend, bool HardwareDecode, int Number,
+        int SizeAttempt, int SizeAttempts, long Limit, long Actual, int? VideoBitrate, int? AudioBitrate, string? Key);
+
+    private static string BackendName(string? backend, int threads) => backend switch
+    {
+        "Nvidia" => "NVIDIA NVENC", "Intel" => "Intel Quick Sync", "Amd" => "AMD AMF",
+        "MediaFoundation" => "Windows Media Foundation", _ => $"CPU · {threads} threads"
+    };
 
     private async Task<FfmpegProcessResult> EncodeImageWithSizeLimitAsync(MediaTask task, string ffmpegPath,
         string temporaryPath, string logPath, MediaConversionOptions options, AppSettings settings,
@@ -116,7 +119,7 @@ internal sealed class MediaEncodingService(RunMediaProcess runProcess,
             MediaSizeBudget.InitialImageQuality(task, options), async (quality, attempt, cancellation) =>
             {
                 var effective = options with { ImageQuality = quality };
-                var arguments = _presetService.BuildArguments(task, temporaryPath, EncoderBackend.Cpu, false,
+                var arguments = await _presetService.BuildArgumentsAsync(task, temporaryPath, EncoderBackend.Cpu, false,
                     PerformanceTuning.ResolveCpuThreads(settings), cancellation, effective);
                 var message = LocalizationService.T("MediaSizeAttempt", attempt, MediaSizeBudget.MaximumImageAttempts);
                 report(new(0, "—", "—", message));
@@ -128,61 +131,23 @@ internal sealed class MediaEncodingService(RunMediaProcess runProcess,
         return last!;
     }
 
-    private async Task<IReadOnlyList<EncoderAttempt>> BuildAttemptsAsync(MediaTask task, string ffmpegPath, AppSettings settings, CancellationToken cancellationToken)
+    private async Task<bool[]> ProbeEncodersAsync(MediaTask task, string ffmpegPath, AppSettings settings, CancellationToken cancellationToken)
     {
         var requestedCodec = FormatCatalog.VideoCodecForTarget(task.TargetFormat);
         var options = MediaConversionOptions.FromTask(task);
         if (options.TargetSizeBytes.HasValue || !settings.HardwareAcceleration || task.ConversionMode == "lossless" || !_presetService.WillUseHardware(task) || requestedCodec is "vp9" or "av1")
         {
-            return [new EncoderAttempt(EncoderBackend.Cpu, false)];
+            return [false, false, false, false];
         }
 
         var container = FormatCatalog.ContainerForVideoTarget(task.TargetFormat);
         var hevc = requestedCodec == "hevc" || (requestedCodec is null && task.Probe.IsHdr && container is "MP4" or "MKV" or "MOV");
-        var checks = await Task.WhenAll(
+        return await Task.WhenAll(
             _hardwareCapabilities.CanEncodeAsync(ffmpegPath, EncoderBackend.Nvidia, hevc, cancellationToken),
             _hardwareCapabilities.CanEncodeAsync(ffmpegPath, EncoderBackend.Intel, hevc, cancellationToken),
             _hardwareCapabilities.CanEncodeAsync(ffmpegPath, EncoderBackend.Amd, hevc, cancellationToken),
             _hardwareCapabilities.CanEncodeAsync(ffmpegPath, EncoderBackend.MediaFoundation, hevc, cancellationToken));
-        var attempts = new List<EncoderAttempt>();
-        if (checks[0])
-        {
-            attempts.Add(new EncoderAttempt(EncoderBackend.Nvidia, !options.HasVideoFilters && CanUseHardwareDecode(task)));
-            if (attempts[^1].HardwareDecode)
-            {
-                attempts.Add(new EncoderAttempt(EncoderBackend.Nvidia, false));
-            }
-        }
-        if (checks[1])
-        {
-            attempts.Add(new EncoderAttempt(EncoderBackend.Intel, !options.HasVideoFilters && CanUseHardwareDecode(task)));
-            if (attempts[^1].HardwareDecode)
-            {
-                attempts.Add(new EncoderAttempt(EncoderBackend.Intel, false));
-            }
-        }
-        if (checks[2])
-        {
-            attempts.Add(new EncoderAttempt(EncoderBackend.Amd, false));
-        }
-        if (checks[3])
-        {
-            attempts.Add(new EncoderAttempt(EncoderBackend.MediaFoundation, !options.HasVideoFilters && CanUseHardwareDecode(task)));
-            if (attempts[^1].HardwareDecode)
-            {
-                attempts.Add(new EncoderAttempt(EncoderBackend.MediaFoundation, false));
-            }
-        }
-        attempts.Add(new EncoderAttempt(EncoderBackend.Cpu, false));
-        return attempts;
     }
-
-    private static bool CanUseHardwareDecode(MediaTask task) =>
-        task.Kind == MediaKind.Video &&
-        !PresetService.RequiresYcgcoConversion(task) &&
-        !(task.Probe.IsHdr && FormatCatalog.ContainerForVideoTarget(task.TargetFormat) is ("AVI" or "FLV")) &&
-        task.Probe.VideoCodec is ("h264" or "hevc" or "av1" or "vp9" or "vp8" or "mpeg2video" or "vc1" or "mjpeg") &&
-        HardwareAccelerationTestService.SupportsHardwareDecode(task.Probe.VideoCodec);
 
     private async Task<ConversionResult> ConvertToIcoAsync(
         MediaTask task,
@@ -204,7 +169,7 @@ internal sealed class MediaEncodingService(RunMediaProcess runProcess,
                 var size = sizes[index];
                 var pngPath = Path.Combine(temporaryDirectory, $"icon-{size}.png");
                 report(new ConversionProgress(index * 100d / sizes.Length, LocalizationService.T("Processing"), "—", LocalizationService.T("GeneratingIcon", size)));
-                var arguments = _presetService.BuildIcoFrameArguments(task, size, pngPath);
+                var arguments = await _presetService.BuildIcoFrameArgumentsAsync(task, size, pngPath, cancellationToken);
                 var run = await _runProcess(task, ffmpegPath, arguments, logPath, _ => { }, cancellationToken);
                 if (run.ExitCode != 0 || !File.Exists(pngPath))
                 {
@@ -213,7 +178,7 @@ internal sealed class MediaEncodingService(RunMediaProcess runProcess,
                 frames.Add((size, pngPath));
             }
 
-            IcoBuilder.Build(frames, temporaryOutput);
+            await IcoBuilder.BuildAsync(frames, temporaryOutput, cancellationToken);
             return new ConversionResult(true, false, temporaryOutput, LocalizationService.T("IcoComplete"), logPath);
         }
         finally
@@ -232,8 +197,4 @@ internal sealed class MediaEncodingService(RunMediaProcess runProcess,
         }
     }
 
-    private static ConversionResult CancelledResult(string logPath) =>
-        new(false, true, string.Empty, LocalizationService.T("Cancelled"), logPath);
-
-    private sealed record EncoderAttempt(EncoderBackend Backend, bool HardwareDecode);
 }

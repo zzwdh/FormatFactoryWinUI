@@ -15,7 +15,7 @@ public sealed class MediaCompatibilityDecodeService
             TimeSpan.FromHours(12), new ProcessRunOptions
             {
                 CaptureCompleteOutput = false, MaximumOutputBytes = BoundedProcessOutput.TailBytes,
-                MaximumErrorBytes = BoundedProcessOutput.TailBytes, LogPath = logPath
+                MaximumErrorBytes = BoundedProcessOutput.TailBytes, LogPath = logPath, UseConversionWorker = true
             }, token);
         _probe = new MediaProbeService().ProbeAsync;
     }
@@ -41,7 +41,8 @@ public sealed class MediaCompatibilityDecodeService
             $"task-{DateTime.Now:yyyyMMdd-HHmmss}-{task.Id:N}-compat-{Guid.NewGuid():N}.log");
         try
         {
-            var run = await _run(fallbackFfmpegPath, BuildArguments(task, intermediatePath), logPath, cancellationToken);
+            var arguments = await BuildArgumentsAsync(task, intermediatePath, cancellationToken);
+            var run = await _run(fallbackFfmpegPath, arguments, logPath, cancellationToken);
             if (run.ExitCode != 0)
                 throw new InvalidDataException(string.IsNullOrWhiteSpace(run.StandardError)
                     ? $"Compatibility decoding failed with exit code {run.ExitCode}."
@@ -61,24 +62,17 @@ public sealed class MediaCompatibilityDecodeService
         }
     }
 
-    internal static IReadOnlyList<string> BuildArguments(MediaTask task, string intermediatePath)
-    {
-        var arguments = new List<string>
+    internal static IReadOnlyList<string> BuildArguments(MediaTask task, string intermediatePath) =>
+        BuildArgumentsAsync(task, intermediatePath, CancellationToken.None).GetAwaiter().GetResult();
+
+    private static Task<string[]> BuildArgumentsAsync(MediaTask task, string intermediatePath, CancellationToken token) =>
+        ConversionBackend.RequestAsync<string[]>("media-plan", new
         {
-            "-hide_banner", "-loglevel", "warning", "-nostdin", "-y", "-xerror", "-err_detect", "explode", "-i", task.InputPath
-        };
-        foreach (var stream in MediaInputPreflightService.RequiredStreams(task, task.Probe)) arguments.AddRange(["-map", stream.Map]);
-        var audioOutput = FormatCatalog.IsAudioFormat(task.TargetFormat);
-        var imageOutput = FormatCatalog.IsImageFormat(task.TargetFormat) || FormatCatalog.IsFrameSequence(task.TargetFormat);
-        if (!audioOutput)
-        {
-            arguments.AddRange(["-c:v", "ffv1", "-level", "3", "-g", "1"]);
-            if (!imageOutput) arguments.AddRange(["-map", "0:s?", "-map", "0:t?", "-c:s", "copy", "-c:t", "copy"]);
-        }
-        arguments.AddRange(["-c:a", "pcm_s32le", "-map_metadata", "0", "-map_chapters", "0", "-threads", "1",
-            "-filter_threads", "1", "-filter_complex_threads", "1", "-progress", "pipe:1", "-nostats", "-f", "matroska", intermediatePath]);
-        return arguments;
-    }
+            action = "compatibility", input = task.InputPath, output = intermediatePath,
+            maps = MediaInputPreflightService.RequiredStreams(task, task.Probe).Select(stream => stream.Map),
+            audioOutput = FormatCatalog.IsAudioFormat(task.TargetFormat),
+            imageOutput = FormatCatalog.IsImageFormat(task.TargetFormat) || FormatCatalog.IsFrameSequence(task.TargetFormat)
+        }, token);
 
     internal static void ValidateIntermediate(MediaTask task, MediaProbeResult intermediate)
     {

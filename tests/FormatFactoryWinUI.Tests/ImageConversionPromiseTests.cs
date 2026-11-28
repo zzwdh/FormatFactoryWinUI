@@ -246,10 +246,8 @@ public sealed class ImageConversionPromiseTests
         Assert.False(await new MediaProbeService().ValidateOutputAsync(ffprobe, output, task, source, default, ffmpeg));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task AnimationFrameVerifier_CleansScratchFileAfterFailureOrCancellation(bool cancel)
+    [Fact]
+    public async Task NativeAnimationVerifier_CancellationReleasesSourceAndLeavesNoArtifacts()
     {
         var ffmpeg = RequireEngine("ffmpeg.exe");
         using var directory = new TemporaryDirectory();
@@ -258,21 +256,11 @@ public sealed class ImageConversionPromiseTests
         await GenerateGifAsync(ffmpeg, input, 0);
         await GenerateAnimatedWebpAsync(ffmpeg, input, output);
         using var cancellation = new CancellationTokenSource();
-        string? temporary = null;
-        Task<bool> Decode(string frame, CancellationToken token)
-        {
-            temporary = frame;
-            Assert.True(File.Exists(frame));
-            if (!cancel) return Task.FromResult(false);
-            cancellation.Cancel();
-            return Task.FromCanceled<bool>(token);
-        }
-        var verification = ImageAnimationInfoReader.ValidateWebpFramesAsync(output, ffmpeg, cancellation.Token, Decode);
-        if (cancel) await Assert.ThrowsAnyAsync<OperationCanceledException>(() => verification);
-        else Assert.False(await verification);
-        Assert.NotNull(temporary);
-        Assert.False(File.Exists(temporary));
-        Assert.False(Directory.Exists(Path.GetDirectoryName(temporary)));
+        var verification = ImageAnimationInfoReader.ReadAsync(output, verifyWebp: true, cancellation.Token);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => verification);
+        using var reopened = File.Open(output, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        Assert.Equal(2, Directory.GetFileSystemEntries(directory.Path).Length);
     }
 
     [Fact]

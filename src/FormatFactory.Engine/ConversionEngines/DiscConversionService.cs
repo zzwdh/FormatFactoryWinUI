@@ -6,7 +6,7 @@ namespace FormatFactoryWinUI.ConversionEngines;
 
 /// <summary>
 /// Unified pipeline for physical optical media and ISO/CSO images.
-/// Managed image conversion is always available. Windows native sector reads
+/// The bundled conversion worker handles ISO/CSO images. Windows native sector reads
 /// are preferred for audio CDs and data discs; local tools are fallbacks.
 /// </summary>
 public sealed class DiscConversionService
@@ -367,7 +367,7 @@ public sealed class DiscConversionService
                     Path.GetFileNameWithoutExtension(tracks[index]) +
                     FormatCatalog.ExtensionFor(targetId));
                 var arguments = BuildAudioArguments(tracks[index], targetPath, targetId);
-                var execution = await ProcessRunner.RunLoggedAsync(
+                var execution = await ProcessRunner.RunConverterLoggedAsync(
                     ffmpegPath,
                     arguments,
                     TimeSpan.FromHours(4),

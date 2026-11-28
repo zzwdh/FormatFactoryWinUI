@@ -154,11 +154,16 @@ public sealed class AutomationStore
         await _gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            using var transaction = await StoreTransaction.OpenAsync(_path, token, direct: true, hash: true).ConfigureAwait(false);
             // Never replace unreadable or corrupt data with a fresh snapshot.
             var current = await LoadCoreAsync(token).ConfigureAwait(false);
             var snapshot = update(current);
             if (ReferenceEquals(current, snapshot) && !_cachedNeedsUpgrade) return;
-            await SaveCoreAsync(snapshot, token).ConfigureAwait(false);
+            _beforeCommit?.Invoke(Copy(snapshot));
+            _cachedHash = await transaction.PublishAsync(snapshot, JsonOptions, token).ConfigureAwait(false);
+            _cachedSnapshot = Copy(snapshot);
+            _cachedNeedsUpgrade = false;
+            Interlocked.Increment(ref _writeCount);
         }
         finally { _gate.Release(); }
     }
@@ -281,33 +286,4 @@ public sealed class AutomationStore
         _cachedNeedsUpgrade = false;
     }
 
-    private async Task SaveCoreAsync(AutomationSnapshot snapshot, CancellationToken token)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        var temporaryPath = $"{_path}.{Guid.NewGuid():N}.tmp";
-        try
-        {
-            byte[] hash;
-            await using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.ReadWrite,
-                             FileShare.None, 4096, FileOptions.Asynchronous | FileOptions.WriteThrough))
-            {
-                await JsonSerializer.SerializeAsync(stream, snapshot, JsonOptions, token).ConfigureAwait(false);
-                await stream.FlushAsync(token).ConfigureAwait(false);
-                stream.Flush(flushToDisk: true);
-                stream.Position = 0;
-                hash = await SHA256.HashDataAsync(stream, token).ConfigureAwait(false);
-            }
-            _beforeCommit?.Invoke(Copy(snapshot));
-            token.ThrowIfCancellationRequested();
-            File.Move(temporaryPath, _path, overwrite: true);
-            _cachedHash = hash;
-            _cachedSnapshot = Copy(snapshot);
-            _cachedNeedsUpgrade = false;
-            Interlocked.Increment(ref _writeCount);
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
-        }
-    }
 }

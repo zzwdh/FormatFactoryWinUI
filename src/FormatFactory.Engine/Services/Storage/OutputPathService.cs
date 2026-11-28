@@ -335,8 +335,7 @@ public sealed class OutputPathLease : IDisposable
             if (_task is not null)
                 OutputCommitReceiptStore.Shared.Prepare(_task, FinalPath, TemporaryPath, _isDirectory);
             stage = StorageFailureStage.Commit;
-            if (_isDirectory) Directory.Move(TemporaryPath, FinalPath);
-            else File.Move(TemporaryPath, FinalPath, overwrite: false);
+            OutputRecoveryService.Publish(TemporaryPath, FinalPath, _isDirectory);
         }
         catch (Exception error)
         {

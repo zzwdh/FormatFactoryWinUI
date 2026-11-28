@@ -1,0 +1,16 @@
+[package]
+name = "format_factory_shell_epub"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+crc32fast = "1"
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+
+[profile.release]
+lto = "thin"

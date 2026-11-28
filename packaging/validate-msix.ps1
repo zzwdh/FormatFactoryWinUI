@@ -24,15 +24,31 @@ try {
     }
     $required = @(
         'FormatFactoryWinUI.exe','FormatFactory.Core.dll','FormatFactory.Engine.dll','FormatFactory.Documents.dll',
-        'FormatFactory.Presentation.dll','FormatFactory.FilterWorker.exe',
+        'FormatFactory.Presentation.dll','FormatFactory.ConversionWorker.exe','FormatFactory.FilterWorker.exe',
+        'FormatFactory.ConversionWorker.licenses.zip',
         'FormatFactory.FilterWorker.dll','FormatFactory.FilterWorker.deps.json',
         'FormatFactory.FilterWorker.runtimeconfig.json',
         'FormatFactoryWinUI.pri','App.xbf','MainWindow.xbf',
         'Views/HistoryView.xbf','Views/SettingsView.xbf','Views/QueueView.xbf','Views/ArchiveConversionView.xbf',
         'Views/PageResources.xbf','Engines/bundle-manifest.json',
-        'FormatFactoryShellExtension.Native.dll','native-shell-build.json','miniz.LICENSE.txt'
+        'FormatFactoryShellExtension.Native.dll','native-shell-build.json','FormatFactoryShellExtension.Native.licenses.zip'
     )
     foreach ($name in $required) { [void](Require-Entry $name) }
+    foreach ($component in @('FormatFactory.ConversionWorker','FormatFactoryShellExtension.Native')) {
+        $licenses = [IO.Compression.ZipArchive]::new((Require-Entry "$component.licenses.zip").Open())
+        try {
+            foreach ($name in @('COPYRIGHT-library.html','licenses/Apache-2.0.txt','licenses/MIT.txt')) {
+                $notice = $licenses.GetEntry("rust-standard-library/$name")
+                if (!$notice -or !$notice.Length) { throw "Missing $component Rust standard library notice: $name" }
+            }
+            foreach ($crate in @('flate2','crc32fast')) {
+                if (!($licenses.Entries | Where-Object { $_.FullName -like "crates/$crate-*/*" -and $_.Length -gt 0 } | Select-Object -First 1)) {
+                    throw "Missing $component notices for $crate."
+                }
+            }
+        }
+        finally { $licenses.Dispose() }
+    }
     foreach ($legacy in @('FormatFactoryShellExtension.comhost.dll','FormatFactoryShellExtension.dll',
         'FormatFactoryShellExtension.deps.json','FormatFactoryShellExtension.runtimeconfig.json',
         'FormatFactoryShellExtension.X.manifest')) {
@@ -69,13 +85,16 @@ try {
         }
         finally { $reader.Dispose() }
     }
-    foreach ($name in @('FormatFactoryWinUI.exe','FormatFactory.FilterWorker.exe','FormatFactoryShellExtension.Native.dll')) {
+    foreach ($name in @('FormatFactoryWinUI.exe','FormatFactory.ConversionWorker.exe','FormatFactory.FilterWorker.exe','FormatFactoryShellExtension.Native.dll')) {
         Assert-PeMachine $name
     }
     $receipt = Read-EntryText 'native-shell-build.json' | ConvertFrom-Json
+    $repository = Split-Path $PSScriptRoot -Parent
+    $shellLock = (Get-FileHash -LiteralPath (Join-Path $repository 'src/FormatFactoryShellExtension.Native/rust/Cargo.lock')).Hash
+    $rustVersion = (Get-Content -LiteralPath (Join-Path $repository 'build/toolchain.lock.json') -Raw | ConvertFrom-Json).rustVersion
     if ($receipt.architecture -cne $Architecture -or $receipt.configuration -cne 'Release' -or
         $receipt.dllBytes -ne $entries['FormatFactoryShellExtension.Native.dll'].Length -or $receipt.formatCount -le 0 -or
-        $receipt.minizVerified -ne $true -or $receipt.dllSha256 -notmatch '^[0-9A-Fa-f]{64}$') {
+        $receipt.epubParser -cne 'rust' -or $receipt.rustLockSha256 -ine $shellLock -or $receipt.rustVersion -cne $rustVersion -or $receipt.dllSha256 -notmatch '^[0-9A-Fa-f]{64}$') {
         throw 'Native Shell build metadata does not match the Release payload.'
     }
     $stream = $entries['FormatFactoryShellExtension.Native.dll'].Open()

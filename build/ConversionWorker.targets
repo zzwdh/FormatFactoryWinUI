@@ -1,0 +1,27 @@
+<Project>
+  <PropertyGroup>
+    <_WorkerRid>$(RuntimeIdentifier)</_WorkerRid>
+    <_WorkerRid Condition="'$(_WorkerRid)' == '' and ('$(Platform)' == 'arm64' or '$(Platform)' == 'x64')">win-$(Platform)</_WorkerRid>
+    <_WorkerRid Condition="'$(_WorkerRid)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</_WorkerRid>
+    <_WorkerTriple Condition="'$(_WorkerRid)' == 'win-x64'">x86_64-pc-windows-msvc</_WorkerTriple>
+    <_WorkerTriple Condition="'$(_WorkerRid)' == 'win-arm64'">aarch64-pc-windows-msvc</_WorkerTriple>
+    <_WorkerProfile Condition="'$(Configuration)' == 'Release'">release</_WorkerProfile>
+    <_WorkerProfile Condition="'$(_WorkerProfile)' == ''">debug</_WorkerProfile>
+    <_WorkerRoot>$(MSBuildThisFileDirectory)..\src\FormatFactory.ConversionWorker</_WorkerRoot>
+    <_WorkerTargetDir>$(MSBuildThisFileDirectory)..\work\cargo-target</_WorkerTargetDir>
+    <_WorkerScript>$(MSBuildThisFileDirectory)build-conversion-worker.ps1</_WorkerScript>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(_WorkerTargetDir)\$(_WorkerTriple)\$(_WorkerProfile)\format_factory_conversion_worker.exe"
+          Link="FormatFactory.ConversionWorker.exe" TargetPath="FormatFactory.ConversionWorker.exe"
+          CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" Visible="false" />
+    <None Include="$(_WorkerTargetDir)\$(_WorkerTriple)\$(_WorkerProfile)\FormatFactory.ConversionWorker.licenses.zip"
+          Link="FormatFactory.ConversionWorker.licenses.zip" TargetPath="FormatFactory.ConversionWorker.licenses.zip"
+          CopyToOutputDirectory="Always" CopyToPublishDirectory="Always" Visible="false" />
+    <UpToDateCheckInput Include="$(_WorkerRoot)\src\**\*.rs;$(_WorkerRoot)\Cargo.toml;$(_WorkerRoot)\Cargo.lock;$(_WorkerScript);$(MSBuildThisFileDirectory)Write-WorkerNotices.ps1;$(MSBuildThisFileDirectory)toolchain.lock.json" />
+  </ItemGroup>
+  <Target Name="BuildConversionWorker" BeforeTargets="PrepareForBuild;ComputeFilesToPublish" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="'$(_WorkerTriple)' == ''" Text="The conversion worker requires win-x64 or win-arm64 (resolved '$(_WorkerRid)')." />
+    <Exec Command="pwsh -NoProfile -File &quot;$(_WorkerScript)&quot; -RuntimeIdentifier $(_WorkerRid) -Profile $(_WorkerProfile) -TargetDirectory &quot;$(_WorkerTargetDir)&quot;" />
+  </Target>
+</Project>

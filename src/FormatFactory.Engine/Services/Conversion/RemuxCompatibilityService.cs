@@ -18,9 +18,9 @@ internal static class RemuxCompatibilityService
         ValidateTarget(task);
         var json = await ReadStreamsAsync(ffprobePath, task.InputPath, cancellationToken);
         var streams = ParseStreams(json);
-        var copied = Validate(task, streams);
+        var copied = await ValidateAsync(task, streams, cancellationToken);
         // Compatibility is checked against the current file, not stale imported metadata.
-        task.Probe = MediaProbeParser.Parse(json, task.InputPath);
+        task.Probe = await MediaProbeParser.ParseAsync(json, task.InputPath, cancellationToken);
         return copied;
         }
         catch (OperationCanceledException) { throw; }
@@ -43,7 +43,10 @@ internal static class RemuxCompatibilityService
                 Fact(task, FormatFailureStage.RemuxPolicy, FormatFailureReason.UnsupportedRoute));
     }
 
-    internal static IReadOnlyList<RemuxStream> Validate(MediaTask task, IReadOnlyList<RemuxStream> streams)
+    internal static IReadOnlyList<RemuxStream> Validate(MediaTask task, IReadOnlyList<RemuxStream> streams) =>
+        ValidateAsync(task, streams, CancellationToken.None).GetAwaiter().GetResult();
+
+    private static async Task<IReadOnlyList<RemuxStream>> ValidateAsync(MediaTask task, IReadOnlyList<RemuxStream> streams, CancellationToken token)
     {
         ValidateTarget(task);
         if (streams.Count == 0) throw FormatFailureDiagnostics.Attach(UnknownStreams(), Fact(task, FormatFailureStage.RemuxPolicy, FormatFailureReason.UnknownStreams));
@@ -59,87 +62,31 @@ internal static class RemuxCompatibilityService
 
         var container = FormatCatalog.IsAudioFormat(task.TargetFormat)
             ? task.TargetFormatId : FormatCatalog.ContainerForVideoTarget(task.TargetFormat).ToLowerInvariant();
-        foreach (var stream in copied)
+        var verdict = await ConversionBackend.RequestAsync<JsonElement>("media-plan", new
         {
-            if (string.IsNullOrWhiteSpace(stream.Type) || string.IsNullOrWhiteSpace(stream.Codec) && stream.Type != "attachment")
+            action = "remux", container, streams = copied.Select(stream => new
+            {
+                type = stream.Type, codec = stream.Codec, attachedPicture = stream.AttachedPicture,
+                channels = stream.Channels, sampleRate = stream.SampleRate
+            })
+        }, token).ConfigureAwait(false);
+        switch (verdict[0].GetString())
+        {
+            case "ok": return copied;
+            case "unknown":
                 throw FormatFailureDiagnostics.Attach(UnknownStreams(), Fact(task, FormatFailureStage.RemuxPolicy, FormatFailureReason.UnknownStreams) with { Count = copied.Count });
-            if (!Supports(container, stream))
+            case "unsupported":
+                var stream = copied[verdict[1].GetInt32()];
                 throw FormatFailureDiagnostics.Attach(Unsupported($"{stream.Type}: {stream.Codec}", task.TargetFormat),
                     Fact(task, FormatFailureStage.RemuxPolicy, FormatFailureReason.UnsupportedStream) with
                     { Codec = stream.Codec, StreamType = stream.Type, Width = stream.Width, Height = stream.Height, Count = copied.Count });
+            case "multiple":
+                throw FormatFailureDiagnostics.Attach(Unsupported("multiple audio/video streams", task.TargetFormat),
+                    Fact(task, FormatFailureStage.RemuxPolicy, FormatFailureReason.MultipleStreams) with { Count = copied.Count });
+            default:
+                throw UnknownStreams();
         }
-        // FLV has exactly one slot for each media stream; accepting several would fail or lose tracks.
-        if (container == "flv" && (copied.Count(stream => stream.Type == "video") > 1 ||
-                                   copied.Count(stream => stream.Type == "audio") > 1))
-            throw FormatFailureDiagnostics.Attach(Unsupported("multiple audio/video streams", task.TargetFormat),
-                Fact(task, FormatFailureStage.RemuxPolicy, FormatFailureReason.MultipleStreams) with { Count = copied.Count });
-        return copied;
     }
-
-    // These are conservative, commonly supported combinations. An unlisted codec
-    // fails explicitly; it is never replaced with an encoder or silently dropped.
-    private static bool Supports(string container, RemuxStream stream) => stream.Type switch
-    {
-        "video" => container switch
-        {
-            "mp4" => stream.Codec is "h264" or "hevc" or "av1" or "vp9" or "mpeg4" ||
-                     stream.AttachedPicture && stream.Codec is "mjpeg" or "png",
-            "mov" => stream.Codec is "h264" or "hevc" or "av1" or "mpeg4" or "mpeg2video" or
-                     "mjpeg" or "prores" or "qtrle" or "dvvideo" or "png",
-            "mkv" => stream.Codec is "h264" or "hevc" or "av1" or "vp8" or "vp9" or "mpeg1video" or
-                     "mpeg2video" or "mpeg4" or "msmpeg4v3" or "wmv1" or "wmv2" or "wmv3" or "vc1" or
-                     "theora" or "ffv1" or "huffyuv" or "mjpeg" or "prores" or "dvvideo" or "png",
-            "webm" => stream.Codec is "vp8" or "vp9" or "av1",
-            "ts" => stream.Codec is "mpeg1video" or "mpeg2video" or "h264" or "hevc" or "vc1",
-            "avi" => stream.Codec is "h264" or "mpeg4" or "mjpeg" or "msmpeg4v3" or "wmv1" or "wmv2" or
-                     "ffv1" or "huffyuv" or "dvvideo",
-            "flv" => stream.Codec is "flv1" or "h264" or "vp6f" or "vp6a",
-            _ => false
-        },
-        "audio" => container switch
-        {
-            "mp4" => stream.Codec is "aac" or "alac" or "mp3" or "ac3" or "eac3",
-            // M4A uses FFmpeg's ipod muxer, whose codec tags differ from MP4.
-            "m4a" => stream.Codec is "aac" or "alac" or "ac3",
-            "mov" => stream.Codec is "aac" or "alac" or "mp3" or "ac3" or "eac3" || IsPcm(stream.Codec),
-            "mkv" => stream.Codec is "aac" or "ac3" or "eac3" or "dts" or "truehd" or "mp1" or "mp2" or
-                     "mp3" or "opus" or "vorbis" or "flac" or "alac" || IsPcm(stream.Codec),
-            "webm" => stream.Codec is "opus" or "vorbis",
-            "ts" => stream.Codec is "mp2" or "mp3" or "aac" or "ac3" or "eac3" or "dts",
-            "avi" => stream.Codec is "mp2" or "mp3" or "ac3" || IsLittleEndianPcm(stream.Codec),
-            "flv" => stream.Codec is "aac" or "mp3" or "speex" or "pcm_s16le" or "pcm_u8" or "adpcm_swf" or "nellymoser",
-            "mp3" => stream.Codec == "mp3",
-            "aac" => stream.Codec == "aac",
-            "opus" => stream.Codec == "opus",
-            "vorbis" => stream.Codec == "vorbis",
-            "ogg" => stream.Codec is "opus" or "vorbis",
-            "flac" => stream.Codec == "flac",
-            "alac" => stream.Codec == "alac",
-            "wav" => IsLittleEndianPcm(stream.Codec) ||
-                     (stream.Codec == "adpcm_ima_wav" && stream.Channels is 1 or 2 && stream.SampleRate > 0),
-            "aiff" => stream.Codec is "pcm_s8" or "pcm_s16be" or "pcm_s24be" or "pcm_s32be" or "pcm_f32be" or "pcm_f64be",
-            "ac3" => stream.Codec == "ac3",
-            "eac3" => stream.Codec == "eac3",
-            "wma" => stream.Codec is "wmav1" or "wmav2" or "wmapro" or "wmavoice" or "wmalossless",
-            _ => false
-        },
-        "subtitle" => container switch
-        {
-            "mp4" or "mov" => stream.Codec == "mov_text",
-            "mkv" => stream.Codec is "subrip" or "ass" or "ssa" or "webvtt" or "dvd_subtitle" or "hdmv_pgs_subtitle" or "dvb_subtitle",
-            "webm" => stream.Codec == "webvtt",
-            "ts" => stream.Codec == "dvb_subtitle",
-            _ => false
-        },
-        "attachment" => container == "mkv",
-        "data" => container == "ts" && stream.Codec is "bin_data" or "klv",
-        _ => false
-    };
-
-    private static bool IsLittleEndianPcm(string codec) => codec is "pcm_u8" or "pcm_s16le" or "pcm_s24le" or
-        "pcm_s32le" or "pcm_f32le" or "pcm_f64le" or "pcm_alaw" or "pcm_mulaw";
-    private static bool IsPcm(string codec) => IsLittleEndianPcm(codec) || codec is "pcm_s8" or "pcm_s16be" or
-        "pcm_s24be" or "pcm_s32be" or "pcm_f32be" or "pcm_f64be";
 
     internal static async Task<bool> ValidateOutputAsync(string ffprobePath, string outputPath,
         IReadOnlyList<RemuxStream> expected, CancellationToken cancellationToken)
@@ -147,7 +94,7 @@ internal static class RemuxCompatibilityService
         try
         {
             var actual = ParseStreams(await ReadStreamsAsync(ffprobePath, outputPath, cancellationToken));
-            var matches = MatchesOutput(expected, actual);
+            var matches = await MatchesOutputAsync(expected, actual, cancellationToken);
             if (!matches)
             {
                 var observation = new object();
@@ -166,20 +113,13 @@ internal static class RemuxCompatibilityService
         }
     }
 
-    internal static bool MatchesOutput(IReadOnlyList<RemuxStream> expected, IReadOnlyList<RemuxStream> actual)
+    internal static bool MatchesOutput(IReadOnlyList<RemuxStream> expected, IReadOnlyList<RemuxStream> actual) =>
+        MatchesOutputAsync(expected, actual, CancellationToken.None).GetAwaiter().GetResult();
+
+    private static Task<bool> MatchesOutputAsync(IReadOnlyList<RemuxStream> expected, IReadOnlyList<RemuxStream> actual, CancellationToken token)
     {
-        // Container changes can reorder tracks and alter their codec tags. Media
-        // types, codecs, dimensions, sample rates and channel counts must survive.
-        var remaining = actual.ToList();
-        foreach (var source in expected)
-        {
-            var index = remaining.FindIndex(output => source.Type == output.Type && source.Codec == output.Codec &&
-                source.Width == output.Width && source.Height == output.Height &&
-                source.SampleRate == output.SampleRate && source.Channels == output.Channels);
-            if (index < 0) return false;
-            remaining.RemoveAt(index);
-        }
-        return expected.Count > 0 && remaining.Count == 0;
+        static object Describe(RemuxStream s) => new { type = s.Type, codec = s.Codec, width = s.Width, height = s.Height, sampleRate = s.SampleRate, channels = s.Channels };
+        return ConversionBackend.RequestAsync<bool>("media-plan", new { action = "matchStreams", expected = expected.Select(Describe), actual = actual.Select(Describe) }, token);
     }
 
     internal static IReadOnlyList<RemuxStream> ParseStreams(string json)

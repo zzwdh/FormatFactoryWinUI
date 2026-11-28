@@ -61,8 +61,7 @@ public partial class App
                 Require(session.AddTask(model), "The compatible-audio fixture task was rejected.");
                 var task = window.Tasks.Single();
                 task.IsDetailsExpanded = true;
-                var row = (FrameworkElement)((ListView)Field("TaskList")!).ItemTemplate.LoadContent();
-                row.DataContext = task;
+                var row = CreateQueueRowPresenter(task);
                 // Host the real template in an off-screen window without taking focus.
                 ((Grid)Field("RootGrid")!).Children.Add(row);
                 window.AppWindow.Move(new Windows.Graphics.PointInt32(-32000, -32000));
@@ -133,10 +132,18 @@ public partial class App
                 Require(task.IsTargetAvailable && start.IsEnabled,
                     "Returning to normal conversion did not restore the valid compatible-audio choice.");
                 model.State = ConversionState.Running;
-                Require(!checkbox.IsEnabled, "A running conversion permits changing its audio choice.");
+                await YieldLayoutAsync();
+                row.UpdateLayout();
+                Require(!FindDescendants<CheckBox>(row).Any(control => control.Name == "CompatibleAudioTrackCheckBox"),
+                    "A running conversion retained its editable audio choice.");
                 task.UseCompatibleAudioTrack = false;
                 Require(task.UseCompatibleAudioTrack, "A running conversion changed its captured audio choice.");
                 model.State = ConversionState.Waiting;
+                await YieldLayoutAsync();
+                row.UpdateLayout();
+                checkbox = FindDescendants<CheckBox>(row).Single(control => control.Name == "CompatibleAudioTrackCheckBox");
+                Require(checkbox.IsEnabled && checkbox.IsChecked == true,
+                    "Returning to an editable state lost the saved compatible audio choice.");
 
                 model.Probe = new MediaProbeResult
                 {

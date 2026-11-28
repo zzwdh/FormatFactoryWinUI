@@ -13,13 +13,13 @@ internal sealed class EncoderProcessDiagnostics(Guid task, Guid operation, int a
     private int? _pid;
     private string _image = "unknown";
 
-    internal void Started(Process process, string selectedExecutable)
+    internal void Started(Process? process, string selectedExecutable, int encoderId)
     {
-        _pid = ReadProcessFact(() => process.Id);
-        var started = ReadProcessFact(() => new DateTimeOffset(process.StartTime.ToUniversalTime()));
+        _pid = encoderId;
+        var started = process is null ? (DateTimeOffset?)null : ReadProcessFact(() => new DateTimeOffset(process.StartTime.ToUniversalTime()));
         try
         {
-            if (process.MainModule?.FileName is { } image) _image = RuntimeFailureDiagnostics.Tool(image);
+            if (process?.MainModule?.FileName is { } image) _image = RuntimeFailureDiagnostics.Tool(image);
         }
         catch (Exception) { /* The process may have already exited or access may be denied. */ }
         Write(FormattableString.Invariant($"stage=Started pid={RuntimeFailureDiagnostics.Number(_pid)} start_utc={Utc(started)} selected_tool={RuntimeFailureDiagnostics.Tool(selectedExecutable)} process_image_tool={_image}"));
@@ -40,9 +40,10 @@ internal sealed class EncoderProcessDiagnostics(Guid task, Guid operation, int a
         $"stage=TerminationRequested reason=ConversionToken requested_utc={requestedAt:O}"));
 
     internal void Finished(Process? process, Task? stdout, Task? stderr, Exception? error, long elapsedMs,
-        bool cancellationObserved)
+        bool cancellationObserved, Process? worker = null)
     {
-        var exit = process is null ? null : ReadProcessFact(() => process.ExitCode);
+        var exitSource = process ?? worker;
+        var exit = exitSource is null ? null : ReadProcessFact(() => exitSource.ExitCode);
         var exitUtc = process is null ? null : ReadProcessFact(() => new DateTimeOffset(process.ExitTime.ToUniversalTime()));
         var progress = Volatile.Read(ref _progress);
         Write(FormattableString.Invariant(

@@ -56,6 +56,8 @@ if (-not $Msix) {
 }
 
 if ($Test) {
+    $testRuntime = 'win-' + [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant()
+    & (Join-Path $PSScriptRoot 'build/build-conversion-worker.ps1') -RuntimeIdentifier $testRuntime -Profile $Configuration.ToLowerInvariant() -Test
     $testArguments = @("test", $testProject, "-c", $Configuration)
     if ($Configuration -eq "Release") {
         $testArguments += "-p:RestoreLockedMode=true"

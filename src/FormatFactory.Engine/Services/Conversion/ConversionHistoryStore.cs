@@ -50,7 +50,6 @@ public sealed record ConversionHistoryItem
 
 public sealed class ConversionHistoryStore
 {
-    private const int MaximumItems = 1000;
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -121,16 +120,17 @@ public sealed class ConversionHistoryStore
         {
             // Always read the actual file before replacing it, even with a warm
             // cache: unreadable/corrupt history must never be overwritten.
-            var items = (await LoadCoreAsync(cancellationToken, allowCache: false).ConfigureAwait(false)).ToList();
-            items.RemoveAll(existing =>
-                existing.TaskId == item.TaskId ||
-                existing.OutputPath.Equals(item.OutputPath, StringComparison.OrdinalIgnoreCase));
-            items.Insert(0, item);
-            if (items.Count > MaximumItems)
+            using var transaction = await StoreTransaction.OpenAsync(_path, cancellationToken).ConfigureAwait(false);
+            var existing = await LoadCoreAsync(cancellationToken, allowCache: false).ConfigureAwait(false);
+            var items = await transaction.SelectAsync("history", existing, new[] { item },
+                row => transaction.Identify(row.TaskId, row.OutputPath), [], cancellationToken).ConfigureAwait(false);
+            try { await transaction.PublishAsync(items, JsonOptions, cancellationToken).ConfigureAwait(false); }
+            catch (Exception error) when (error is not OperationCanceledException)
             {
-                items.RemoveRange(MaximumItems, items.Count - MaximumItems);
+                PersistenceFailureDiagnostics.Record(error, DiagnosticStore.History, DiagnosticPersistenceStage.CommitSnapshot, items: items.Length);
+                throw;
             }
-            await SaveCoreAsync(items, cancellationToken);
+            _cache = null;
             return item;
         }
         finally
@@ -216,49 +216,4 @@ public sealed class ConversionHistoryStore
     private readonly record struct FileStamp(long Length, DateTime ModifiedUtc, DateTime CreatedUtc);
     private sealed record HistorySnapshot(FileStamp Stamp, ConversionHistoryItem[] Items);
 
-    private async Task SaveCoreAsync(
-        IReadOnlyCollection<ConversionHistoryItem> items,
-        CancellationToken token)
-    {
-        try { Directory.CreateDirectory(Path.GetDirectoryName(_path)!); }
-        catch (Exception error) when (error is not OperationCanceledException)
-        {
-            PersistenceFailureDiagnostics.Record(error, DiagnosticStore.History, DiagnosticPersistenceStage.CreateDirectory);
-            throw;
-        }
-        var temporaryPath = $"{_path}.{Guid.NewGuid():N}.tmp";
-        var diagnosticStage = DiagnosticPersistenceStage.WriteSnapshot;
-        try
-        {
-            await using (var stream = new FileStream(
-                temporaryPath,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                4096,
-                FileOptions.Asynchronous))
-            {
-                await JsonSerializer.SerializeAsync(stream, items, JsonOptions, token);
-                await stream.FlushAsync(token);
-            }
-            // The temporary file's stamp describes precisely the content written
-            // here, even if another process replaces the destination immediately.
-            var stamp = ReadStamp(temporaryPath);
-            diagnosticStage = DiagnosticPersistenceStage.CommitSnapshot;
-            File.Move(temporaryPath, _path, true);
-            _cache = new HistorySnapshot(stamp, CloneItems(items));
-        }
-        catch (Exception error) when (error is not OperationCanceledException)
-        {
-            PersistenceFailureDiagnostics.Record(error, DiagnosticStore.History, diagnosticStage, items: items.Count);
-            throw;
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath))
-            {
-                File.Delete(temporaryPath);
-            }
-        }
-    }
 }

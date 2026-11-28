@@ -1,8 +1,5 @@
-using System.Buffers.Binary;
 using System.ComponentModel;
-using System.Runtime.InteropServices;
-using System.Text;
-using Microsoft.Win32.SafeHandles;
+using System.Text.Json;
 
 namespace FormatFactoryWinUI.Services;
 
@@ -38,6 +35,7 @@ public sealed class DirectoryChangeEventArgs : EventArgs
 public sealed class NativeDirectoryWatcher : IDisposable
 {
     private readonly object _gate = new();
+    private readonly object _lifecycle = new();
     private readonly IDirectoryChangeBackend _backend;
     private CancellationTokenSource? _cancellation;
     private Task? _reader;
@@ -72,8 +70,13 @@ public sealed class NativeDirectoryWatcher : IDisposable
 
     public bool Start(string folderPath, bool includeSubdirectories = false)
     {
+        lock (_lifecycle) return StartCore(folderPath, includeSubdirectories);
+    }
+
+    private bool StartCore(string folderPath, bool includeSubdirectories)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(folderPath);
-        Stop();
+        StopCore();
 
         var root = Path.GetFullPath(folderPath);
         if (!Directory.Exists(root))
@@ -111,6 +114,11 @@ public sealed class NativeDirectoryWatcher : IDisposable
 
     public void Stop()
     {
+        lock (_lifecycle) StopCore();
+    }
+
+    private void StopCore()
+    {
         CancellationTokenSource? cancellation;
         Task? reader;
         lock (_gate)
@@ -133,7 +141,7 @@ public sealed class NativeDirectoryWatcher : IDisposable
         _backend.Cancel();
         try
         {
-            reader?.Wait(TimeSpan.FromSeconds(2));
+            if (reader is not null && reader.Id != Task.CurrentId) reader.Wait(TimeSpan.FromSeconds(2));
         }
         catch (AggregateException exception) when (
             exception.InnerExceptions.All(item => item is OperationCanceledException))
@@ -149,20 +157,16 @@ public sealed class NativeDirectoryWatcher : IDisposable
 
     public void Dispose()
     {
-        lock (_gate)
+        lock (_lifecycle)
         {
-            if (_disposed)
+            lock (_gate)
             {
-                return;
+                if (_disposed) return;
+                _disposed = true;
             }
+            StopCore();
+            _backend.Dispose();
         }
-
-        Stop();
-        lock (_gate)
-        {
-            _disposed = true;
-        }
-        _backend.Dispose();
     }
 
     private void ReadLoop(CancellationToken cancellationToken)
@@ -217,10 +221,30 @@ public sealed class NativeDirectoryWatcher : IDisposable
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
-            DispatchError(exception);
+            try { DispatchError(exception); }
+            finally
+            {
+                lock (_gate)
+                {
+                    // A handler can stop or restart the watcher. Only this subscription
+                    // owns the backend and cancellation source while its token matches.
+                    if (_cancellation?.Token == cancellationToken)
+                    {
+                        _running = false;
+                        _reader = null;
+                        _rootPath = null;
+                        _eventContext = null;
+                        _cancellation.Dispose();
+                        _cancellation = null;
+                        _backend.Close();
+                        NativeDiagnostics.Log.ServiceStopped(nameof(NativeDirectoryWatcher));
+                    }
+                }
+            }
         }
+        catch (Exception) when (cancellationToken.IsCancellationRequested) { }
     }
 
     private string? GetRootPath()
@@ -304,11 +328,9 @@ internal interface IDirectoryChangeBackend : IDisposable
 
 internal sealed class ReadDirectoryChangesBackend : IDirectoryChangeBackend
 {
-    private const int BufferSize = 64 * 1024;
     private readonly object _gate = new();
-    private SafeFileHandle? _directory;
-    private nint _activeOverlapped;
-    private bool _includeSubdirectories;
+    private ExternalProcessLifetime? _session;
+    private Task<CapturedProcessOutput>? _errors;
     private bool _disposed;
 
     public void Open(string folderPath, bool includeSubdirectories)
@@ -316,129 +338,80 @@ internal sealed class ReadDirectoryChangesBackend : IDirectoryChangeBackend
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            CloseCore();
-            var handle = CreateFile(
-                folderPath,
-                FileListDirectory,
-                FileShareRead | FileShareWrite | FileShareDelete,
-                0,
-                OpenExisting,
-                FileFlagBackupSemantics | FileFlagOverlapped,
-                0);
-            if (handle.IsInvalid)
+            Close();
+            var session = ConversionBackend.Start("watch-directory", CancellationToken.None);
+            try
             {
-                var error = Marshal.GetLastPInvokeError();
-                handle.Dispose();
-                throw new Win32Exception(error, LocalizationService.T("GeneralServiceCannotWatchFolder", folderPath));
+                var process = session.Process;
+                var errors = BoundedProcessOutput.ReadAsync(process.StandardError.BaseStream, "stderr", 1024, requireComplete: false);
+                process.StandardInput.WriteLine(JsonSerializer.Serialize(new { path = folderPath, subtree = includeSubdirectories }));
+                process.StandardInput.Flush();
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var ready = process.StandardOutput.ReadLineAsync(deadline.Token).AsTask().GetAwaiter().GetResult();
+                if (ready != "ready")
+                    throw Failure(errors.GetAwaiter().GetResult().Text,
+                        LocalizationService.T("GeneralServiceCannotWatchFolder", folderPath));
+                _session = session;
+                _errors = errors;
             }
-
-            _directory = handle;
-            _includeSubdirectories = includeSubdirectories;
+            catch
+            {
+                session.Dispose();
+                throw;
+            }
         }
     }
 
-    public IReadOnlyList<NativeDirectoryChange> Read(CancellationToken cancellationToken)
+    public IReadOnlyList<NativeDirectoryChange> Read(CancellationToken token)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        SafeFileHandle directory;
-        bool includeSubdirectories;
+        ExternalProcessLifetime session;
+        Task<CapturedProcessOutput> errors;
         lock (_gate)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            directory = _directory
-                ?? throw new InvalidOperationException(LocalizationService.T("GeneralServiceWatcherNotOpen"));
-            includeSubdirectories = _includeSubdirectories;
+            token.ThrowIfCancellationRequested();
+            session = _session ?? throw new InvalidOperationException(LocalizationService.T("GeneralServiceWatcherNotOpen"));
+            errors = _errors!;
         }
+        var line = session.Process.StandardOutput.ReadLineAsync(token).AsTask().GetAwaiter().GetResult();
+        token.ThrowIfCancellationRequested();
+        if (line is null)
+            throw Failure(errors.GetAwaiter().GetResult().Text, LocalizationService.T("GeneralServiceDirectoryWatchReadFailed"));
+        return JsonSerializer.Deserialize<NativeDirectoryChange[]>(line)
+            ?? throw new InvalidDataException(LocalizationService.T("GeneralServiceDirectoryWatchInvalidRecord"));
+    }
 
-        var buffer = new byte[BufferSize];
-        var pinnedBuffer = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-        using var completion = new EventWaitHandle(false, EventResetMode.AutoReset);
-        var overlapped = Marshal.AllocHGlobal(Marshal.SizeOf<NativeOverlappedData>());
-        try
+    private static Exception Failure(string line, string message)
+    {
+        return line.Trim().Split(' ') switch
         {
-            Marshal.StructureToPtr(
-                new NativeOverlappedData
-                {
-                    EventHandle = completion.SafeWaitHandle.DangerousGetHandle()
-                },
-                overlapped,
-                false);
-            lock (_gate)
-            {
-                _activeOverlapped = overlapped;
-            }
-
-            var started = ReadDirectoryChangesW(
-                directory,
-                pinnedBuffer.AddrOfPinnedObject(),
-                BufferSize,
-                includeSubdirectories,
-                NotifyChangeFileName | NotifyChangeDirectoryName |
-                NotifyChangeSize | NotifyChangeLastWrite | NotifyChangeCreation,
-                0,
-                overlapped,
-                0);
-            if (!started)
-            {
-                var error = Marshal.GetLastPInvokeError();
-                if (error != ErrorIoPending)
-                {
-                    throw new Win32Exception(error, LocalizationService.T("GeneralServiceDirectoryWatchStartFailed"));
-                }
-            }
-
-            var signaled = WaitHandle.WaitAny([completion, cancellationToken.WaitHandle]);
-            if (signaled == 1)
-            {
-                // CancelIoEx only requests cancellation. The OVERLAPPED structure
-                // and pinned buffer must stay alive until the driver completes it.
-                _ = CancelIoEx(directory, overlapped);
-                _ = GetOverlappedResult(directory, overlapped, out _, true);
-                throw new OperationCanceledException(cancellationToken);
-            }
-
-            if (!GetOverlappedResult(directory, overlapped, out var bytesReturned, false))
-            {
-                var error = Marshal.GetLastPInvokeError();
-                if (error == ErrorOperationAborted && cancellationToken.IsCancellationRequested)
-                {
-                    throw new OperationCanceledException(cancellationToken);
-                }
-                throw new Win32Exception(error, LocalizationService.T("GeneralServiceDirectoryWatchReadFailed"));
-            }
-
-            return ParseNotifications(buffer.AsSpan(0, checked((int)bytesReturned)));
-        }
-        finally
-        {
-            lock (_gate)
-            {
-                if (_activeOverlapped == overlapped)
-                {
-                    _activeOverlapped = 0;
-                }
-            }
-            Marshal.FreeHGlobal(overlapped);
-            pinnedBuffer.Free();
-        }
+            ["error", "io", var number] when int.TryParse(number, out var code) => new Win32Exception(code, message),
+            ["error", "GeneralServiceDirectoryWatchStartFailed", var number] when int.TryParse(number, out var code)
+                => new Win32Exception(code, LocalizationService.T("GeneralServiceDirectoryWatchStartFailed")),
+            ["error", var key] when key is "GeneralServiceDirectoryWatchInvalidOffset" or "GeneralServiceDirectoryWatchInvalidRecord"
+                => new InvalidDataException(LocalizationService.T(key)),
+            _ => new IOException(message)
+        };
     }
 
     public void Cancel()
     {
-        lock (_gate)
-        {
-            if (_directory is { IsInvalid: false, IsClosed: false } directory)
-            {
-                CancelIoEx(directory, _activeOverlapped);
-            }
-        }
+        lock (_gate) _session?.Process.StandardInput.Close();
     }
 
     public void Close()
     {
         lock (_gate)
         {
-            CloseCore();
+            if (_session is not { } session) return;
+            _session = null;
+            _errors = null;
+            try
+            {
+                session.Process.StandardInput.Close();
+                // EOF releases the native subscription even with no directory activity.
+                session.Exited.Wait(TimeSpan.FromSeconds(2));
+            }
+            finally { session.Dispose(); }
         }
     }
 
@@ -446,125 +419,8 @@ internal sealed class ReadDirectoryChangesBackend : IDirectoryChangeBackend
     {
         lock (_gate)
         {
-            if (_disposed)
-            {
-                return;
-            }
             _disposed = true;
-            CloseCore();
+            Close();
         }
     }
-
-    internal static IReadOnlyList<NativeDirectoryChange> ParseNotifications(
-        ReadOnlySpan<byte> buffer)
-    {
-        var result = new List<NativeDirectoryChange>();
-        var offset = 0;
-        while (offset + 12 <= buffer.Length)
-        {
-            var nextOffset = BinaryPrimitives.ReadUInt32LittleEndian(buffer.Slice(offset, 4));
-            var actionValue = BinaryPrimitives.ReadUInt32LittleEndian(buffer.Slice(offset + 4, 4));
-            var nameLength = BinaryPrimitives.ReadUInt32LittleEndian(buffer.Slice(offset + 8, 4));
-            if (nameLength > int.MaxValue ||
-                (nameLength & 1) != 0 ||
-                offset + 12L + nameLength > buffer.Length)
-            {
-                throw new InvalidDataException(LocalizationService.T("GeneralServiceDirectoryWatchInvalidRecord"));
-            }
-
-            var relativePath = Encoding.Unicode.GetString(
-                buffer.Slice(offset + 12, checked((int)nameLength)));
-            if (Enum.IsDefined(typeof(NativeDirectoryChangeAction), actionValue))
-            {
-                result.Add(new NativeDirectoryChange(
-                    (NativeDirectoryChangeAction)actionValue,
-                    relativePath));
-            }
-
-            if (nextOffset == 0)
-            {
-                break;
-            }
-            if (nextOffset < 12 || offset + nextOffset > buffer.Length)
-            {
-                throw new InvalidDataException(LocalizationService.T("GeneralServiceDirectoryWatchInvalidOffset"));
-            }
-            offset += checked((int)nextOffset);
-        }
-        return result;
-    }
-
-    private void CloseCore()
-    {
-        if (_directory is null)
-        {
-            return;
-        }
-        if (!_directory.IsInvalid && !_directory.IsClosed)
-        {
-            CancelIoEx(_directory, _activeOverlapped);
-        }
-        _directory.Dispose();
-        _directory = null;
-        _activeOverlapped = 0;
-    }
-
-    private const uint FileListDirectory = 0x0001;
-    private const uint FileShareRead = 0x00000001;
-    private const uint FileShareWrite = 0x00000002;
-    private const uint FileShareDelete = 0x00000004;
-    private const uint OpenExisting = 3;
-    private const uint FileFlagOverlapped = 0x40000000;
-    private const uint FileFlagBackupSemantics = 0x02000000;
-    private const uint NotifyChangeFileName = 0x00000001;
-    private const uint NotifyChangeDirectoryName = 0x00000002;
-    private const uint NotifyChangeSize = 0x00000008;
-    private const uint NotifyChangeLastWrite = 0x00000010;
-    private const uint NotifyChangeCreation = 0x00000040;
-    private const int ErrorOperationAborted = 995;
-    private const int ErrorIoPending = 997;
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeOverlappedData
-    {
-        public nint Internal;
-        public nint InternalHigh;
-        public uint Offset;
-        public uint OffsetHigh;
-        public nint EventHandle;
-    }
-
-    [DllImport("kernel32.dll", EntryPoint = "CreateFileW", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern SafeFileHandle CreateFile(
-        string fileName,
-        uint desiredAccess,
-        uint shareMode,
-        nint securityAttributes,
-        uint creationDisposition,
-        uint flagsAndAttributes,
-        nint templateFile);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool ReadDirectoryChangesW(
-        SafeFileHandle directory,
-        nint buffer,
-        uint bufferLength,
-        [MarshalAs(UnmanagedType.Bool)] bool watchSubtree,
-        uint notifyFilter,
-        nint bytesReturned,
-        nint overlapped,
-        nint completionRoutine);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetOverlappedResult(
-        SafeFileHandle file,
-        nint overlapped,
-        out uint bytesTransferred,
-        [MarshalAs(UnmanagedType.Bool)] bool wait);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CancelIoEx(SafeFileHandle file, nint overlapped);
 }

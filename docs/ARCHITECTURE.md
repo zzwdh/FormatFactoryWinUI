@@ -9,7 +9,7 @@
 | FormatFactory.Documents | 文档转换流程、外部文档工具、PDF / DOCX / EPUB 等格式读写与校验 | Core、Engine |
 | FormatFactory.Presentation | 展示模型、布局规则、集合与进度批处理、能力展示 | Core、Engine |
 | FormatFactoryWinUI | XAML、窗口、WinRT 适配、OCR、激活、Shell 集成、对象装配 | Core、Engine、Documents、Presentation，构建时还引用 FilterWorker |
-| FormatFactoryShellExtension.Native | C++ Explorer COM 菜单、EPUB 缩略图与预览 | Windows SDK、miniz；构建时读取 formats.json |
+| FormatFactoryShellExtension.Native | C++ Explorer COM 菜单、EPUB 缩略图与预览 | Windows SDK、Rust EPUB 静态库，构建时读取 formats.json |
 
 Core、Engine、Documents、Presentation 面向 net11.0，可独立于 Windows App SDK 和 WinRT 编译。Win32 / COM 及外部工具路线按能力要求在 Windows 上运行。
 
@@ -77,6 +77,25 @@ Engine 的 `ApplicationLifecycleCoordinator` 维护 `ApplicationStartupPhase`、
 私有产物检查与清理由 `MediaConversionArtifacts` 共用。预检发生在预留输出路径前；编码尝试只写私有临时路径；验证通过后才提交并报告 100%。提交冲突保留已验证产物和恢复记录，完成通知异常不能使已提交产物变成失败。兼容解码临时替换的来源路径、探测结果、音轨及选项由入口的 `finally` 恢复，进程及取消记录也在该边界清理。转换参数、持久化格式和路径租约协议沿用既有实现。
 
 四项整理的范围、收益及验证记录见 [2026-11-03 完整架构整理](architecture/ARCHITECTURE-COMPLETE-2026-11-03.md)。
+
+## Rust 转换后台
+
+WinUI 使用发布目录内的 `FormatFactory.ConversionWorker.exe`。工作负载估算与并发准入复用宿主进程的调度会话。每个编码或归档作业使用独立会话，目录订阅存续到停止监控，其余操作完成即退出。Windows Job 和标准管道承担进程生命周期与取消。
+
+| 入口 | Rust 负责 | 宿主负责 |
+| --- | --- | --- |
+| 媒体 | ffprobe 流解析、FFmpeg 参数、硬件/软件回退、目标大小与质量搜索、媒体产物检查，ICO 组装 | 调用引擎、暂停恢复、展示进度，补充 Media Foundation 与 WIC 元数据 |
+| 归档 | 分卷检查、列出与提取、重新压缩、严格校验和密码重试 | 提供用户选择和密码，登记发布收据 |
+| 光盘与图片 | ISO/CSO 流式编解码和校验，GIF/WebP 动画信息、WebP 帧解码与 TIFF 检查 | 系统设备读取和 Windows 图像接口 |
+| 文档 | 根据工具能力生成执行步骤，从剪贴板 HTML 提取文本，读取 WordprocessingML，生成可编辑 DOCX、TXT 和 Markdown，打包和验证 EPUB | Microsoft 365 schema 验证、PDF 读写、OCR、IFilter、外部 Office 和 Calibre 适配 |
+| 队列与自动化 | 在跨进程锁内合并队列、限制历史条数、发布快照，逐项扫描目录并订阅 Windows 文件变更 | 管理 UI 操作、迁移历史模型，应用自动化规则和本地化通知 |
+| 产物与恢复 | 流式 SHA-256、恢复复制、无覆盖发布 | 路径预留、任务与收据匹配、恢复项索引和保留期 |
+
+协议版本由 `--protocol-v1` 指定。会话请求通过标准输入或当前用户专用的命名管道传递。队列继续写入 schema v4。后台在提交帧到达后才替换磁盘快照，主进程意外退出时操作系统释放锁，截断的传输不会覆盖旧队列。文件发布与队列快照分属两次操作，恢复收据记录两者之间的状态。
+
+结构化文档协议最多接收 512 层 JSON 嵌套。EPUB 结构校验对单个需要解析的 XML 成员使用 256 MiB 上限。图片、字体等二进制资源走单独的数据流。
+
+Explorer 的 EPUB 入口位于原生 COM DLL。Rust 静态库负责 ZIP 目录、条目解压与 CRC 校验，C++ 处理 COM、XmlLite 和 WIC。Windows x64 和 ARM64 各自携带对应的二进制与许可证。
 
 ## 资源归属
 

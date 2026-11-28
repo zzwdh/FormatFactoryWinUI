@@ -4,6 +4,12 @@ namespace FormatFactoryWinUI.Disc;
 
 public sealed class DiscImageConverter
 {
+    private readonly DiscImageWorker _worker;
+
+    public DiscImageConverter() : this(ConversionWorkerProcess.ExecutablePath) { }
+
+    internal DiscImageConverter(string workerExecutable) => _worker = new DiscImageWorker(workerExecutable);
+
     public Task ConvertAsync(
         string inputPath,
         DiscImageFormat inputFormat,
@@ -31,7 +37,7 @@ public sealed class DiscImageConverter
         ConvertIsoToCsoAsync(
             isoPath,
             csoPath,
-            CsoImageCodec.DefaultBlockSize,
+            DiscImageWorker.DefaultBlockSize,
             progress,
             cancellationToken);
 
@@ -46,13 +52,24 @@ public sealed class DiscImageConverter
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await CsoImageCodec.WriteAsync(input, temporary, blockSize, progress, cancellationToken);
+            if (!DiscImageWorker.IsValidBlockSize(blockSize))
+                throw new InvalidDataException(LocalizationService.T("ConversionUiCsoBlockSizePowerOfTwo"));
+            using var source = File.Open(input, FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (source.Length == 0)
+                throw new InvalidDataException(LocalizationService.T("ConversionUiIsoImageEmpty"));
+            if ((source.Length - 1) / blockSize >= int.MaxValue - 1L)
+                throw new InvalidDataException(LocalizationService.T("ConversionUiIsoTooManyCsoBlocks"));
+            await _worker.ConvertAsync("iso-to-cso", input, temporary, blockSize,
+                source.Length, source.Length, progress, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             await using (var check = OpenCso(temporary))
             {
-                _ = await CsoImageCodec.ReadLayoutAsync(check, cancellationToken);
+                var layout = await _worker.CheckAsync(check, verify: false, cancellationToken);
+                if (layout.UncompressedLength != source.Length || layout.BlockSize != blockSize)
+                    throw new InvalidDataException(LocalizationService.T("ConversionUiCsoDecodedSizeMismatch"));
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             File.Move(temporary, output, overwrite: false);
         }
         finally
@@ -72,25 +89,13 @@ public sealed class DiscImageConverter
         {
             cancellationToken.ThrowIfCancellationRequested();
             await using var source = OpenCso(input);
-            var layout = await CsoImageCodec.ReadLayoutAsync(source, cancellationToken);
-            await using (var destination = new FileStream(
-                temporary,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                128 * 1024,
-                FileOptions.Asynchronous | FileOptions.SequentialScan))
-            {
-                FormatFactoryWinUI.Services.ProcessResourcePolicy.TrySetFileIoPriority(
-                    destination,
-                    FormatFactoryWinUI.Services.FileIoPriority.Low);
-                await CsoImageCodec.DecodeAsync(source, destination, layout, progress, cancellationToken);
-                await destination.FlushAsync(cancellationToken);
-                if (destination.Length != layout.TotalBytes)
-                {
-                    throw new InvalidDataException(LocalizationService.T("ConversionUiDecodedIsoSizeMismatch"));
-                }
-            }
+            var layout = await _worker.CheckAsync(source, verify: false, cancellationToken);
+            var totalBytes = layout.UncompressedLength;
+            var blockSize = layout.BlockSize;
+            await _worker.ConvertAsync("cso-to-iso", input, temporary, blockSize,
+                totalBytes, source.Length, progress, cancellationToken);
+            if (new FileInfo(temporary).Length != totalBytes)
+                throw new InvalidDataException(LocalizationService.T("ConversionUiDecodedIsoSizeMismatch"));
 
             cancellationToken.ThrowIfCancellationRequested();
             File.Move(temporary, output, overwrite: false);

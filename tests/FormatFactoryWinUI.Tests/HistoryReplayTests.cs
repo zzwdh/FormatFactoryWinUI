@@ -256,3 +256,4 @@ public sealed class HistoryReplayTests
         };
     }
 }
+

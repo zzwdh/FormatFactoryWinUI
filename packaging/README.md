@@ -62,7 +62,7 @@ Release 构建与 MSIX 发布会按 x64、ARM64 专属 NuGet 锁文件执行严�
 
 生成结果位于 `outputs/msix/`。每次构建都会先清理对应架构的 `work/publish-*` 与 staging 目录，并执行以下发布门禁：
 
-- Shell Extension publish 和 staging 必须包含原生 DLL、构建记录与 miniz 许可证，不再包含托管 COM Host。
+- Shell Extension publish 和 staging 包含原生 DLL、构建记录与 `FormatFactoryShellExtension.Native.licenses.zip`。许可证归档收录 Rust 标准库、flate2、CRC32 及其锁定依赖的声明。
 - 单体 MSIX 打包后再次检查上述文件，缺少任意文件立即失败。
 - Store 脚本会删除同名旧单体包，确保 x64 与 ARM64 都来自本轮构建。
 - Bundle 必须包含本轮生成的 x64 与 ARM64 单体包。
@@ -85,9 +85,9 @@ Microsoft Store 会在认证和发布流程中重新签名；提交前必须使�
 
 ## C++ Shell 主基线
 
-`src/FormatFactoryShellExtension.Native` 提供 C++20 原生 DLL，使用经典 COM/WRL 实现 Explorer 命令、EPUB 缩略图与 EPUB 预览处理器，静态链接 C/C++ 运行库。主程序一次自包含发布会同时输出 `FormatFactory.Documents.dll` 和隔离 IFilter 的 `FormatFactory.FilterWorker`。打包脚本在暂存前检查这些文件。
+`src/FormatFactoryShellExtension.Native` 提供 C++20 原生 DLL，使用经典 COM/WRL 实现 Explorer 命令、EPUB 缩略图与 EPUB 预览处理器，静态链接 C/C++ 运行库。主程序一次自包含发布会同时输出 `FormatFactory.Documents.dll`、隔离 IFilter 的 `FormatFactory.FilterWorker` 和目标架构的 `FormatFactory.ConversionWorker.exe`。同目录下的 `FormatFactory.ConversionWorker.licenses.zip` 包含锁定版本 Rust 标准库的版权说明，以及 Cargo 为该架构解析的各依赖包所附许可文件。打包脚本在暂存前检查这些文件。
 
-三个 CLSID、线程模型、Explorer 子命令 GUID、批次 JSON、`formatfactory://open/?batch=...` 协议以及文件关联保持不变。格式扩展表在构建时由唯一的 `formats.json` 生成；miniz 的来源与许可证继续保留在 vendor 目录。默认产物统一位于 `outputs/msix/`，已移除 `Managed` / `NativeCandidate` 双轨选择和旧托管项目。
+三个 CLSID、线程模型、Explorer 子命令 GUID、批次 JSON、`formatfactory://open/?batch=...` 协议以及文件关联保持不变。格式扩展表在构建时由唯一的 `formats.json` 生成；Rust 静态库处理 EPUB 的 ZIP 目录、成员读取和路径。miniz 的源码和许可证位于 vendor 目录，用于在原生测试中生成独立 ZIP 夹具。默认产物统一位于 `outputs/msix/`，已移除 `Managed` / `NativeCandidate` 双轨选择和旧托管项目。
 
 ```powershell
 .\src\FormatFactoryShellExtension.Native\build.ps1 -Architecture all -RunTests
@@ -96,7 +96,7 @@ Microsoft Store 会在认证和发布流程中重新签名；提交前必须使�
 .\packaging\build-store-msix.ps1 -OfflineEngines -CandidateOnly
 ```
 
-`packaging/validate-msix.ps1` 检查主程序、FilterWorker、自包含部署文件、页面 XBF/PRI、原生 DLL 的 PE 架构、三个 COM 类和 EPUB 处理器注册；还核对原生 DLL 与被测试构建记录的 SHA256。原生编译前实际校验 miniz 的三个 vendored 文件。x64 主机可运行 x64 原生测试并交叉编译 ARM64；未执行另一架构的测试会明确标为候选，正式提升需该架构设备验收。普通编译和原生测试不触发数 GB 内置引擎的打包扫描。Explorer 未缓存的快速状态查询返回 `E_PENDING`，只在允许慢查询时枚举选择项，根菜单和九个子命令共享短期分类缓存。
+`packaging/validate-msix.ps1` 检查主程序、FilterWorker、自包含部署文件、页面 XBF/PRI、原生 DLL 的 PE 架构、三个 COM 类和 EPUB 处理器注册；还核对原生 DLL 与被测试构建记录的 SHA256。原生包验证还核对 Shell 构建记录中的 Rust 版本与 Cargo.lock 哈希，并读取随包许可证。原生构建会校验生成测试夹具所用的 miniz 源码。x64 主机可运行 x64 原生测试并交叉编译 ARM64；未执行另一架构的测试会明确标为候选，正式提升需该架构设备验收。普通编译和原生测试不触发数 GB 内置引擎的打包扫描。Explorer 未缓存的快速状态查询返回 `E_PENDING`，只在允许慢查询时枚举选择项，根菜单和九个子命令共享短期分类缓存。
 
 ## 内置转换引擎
 

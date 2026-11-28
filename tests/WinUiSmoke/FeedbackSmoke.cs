@@ -75,7 +75,7 @@ public partial class App
             }
             finally { LocalizationService.SetLanguage(originalLanguage); }
 
-            Invoke("RecordFeedbackError", "Synthetic conversion error C:\\Users\\smoke-user\\private.mov", null!, null!);
+            _window!.RecordFeedbackError("Synthetic conversion error C:\\Users\\smoke-user\\private.mov");
             var settings = (SettingsView)Field("SettingsView")!;
             Require(settings.HasPendingFeedbackError, "A conversion error did not appear in settings.");
             var service = (FeedbackReportService)Field("_feedbackReports")!;

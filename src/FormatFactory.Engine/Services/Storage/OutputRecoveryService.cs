@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -375,64 +374,27 @@ public sealed class OutputRecoveryService
             throw new InvalidDataException(LocalizationService.T("OutputRecoveryChanged"));
     }
 
-    private static OutputRecoveryFingerprint[] Fingerprint(string path, bool isDirectory, CancellationToken token)
-    {
-        var files = new List<OutputRecoveryFingerprint>();
-        void AddFile(string file, string relative)
-        {
-            token.ThrowIfCancellationRequested();
-            if (IsReparsePoint(file)) throw new InvalidDataException("Output recovery cannot contain links.");
-            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
-            var length = stream.Length;
-            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-            var buffer = new byte[128 * 1024];
-            int count;
-            while ((count = stream.Read(buffer)) > 0) { token.ThrowIfCancellationRequested(); hash.AppendData(buffer, 0, count); }
-            files.Add(new(relative, false, length, Convert.ToHexString(hash.GetHashAndReset())));
-        }
-        void AddDirectory(string directory)
-        {
-            token.ThrowIfCancellationRequested();
-            if (IsReparsePoint(directory)) throw new InvalidDataException("Output recovery cannot contain links.");
-            foreach (var child in Directory.EnumerateFileSystemEntries(directory).Order(StringComparer.Ordinal))
-            {
-                token.ThrowIfCancellationRequested();
-                var relative = Path.GetRelativePath(path, child);
-                if (Directory.Exists(child)) { files.Add(new(relative, true, 0, string.Empty)); AddDirectory(child); }
-                else AddFile(child, relative);
-            }
-        }
-        if (isDirectory) AddDirectory(path); else AddFile(path, string.Empty);
-        return files.OrderBy(file => file.Path, StringComparer.Ordinal).ToArray();
-    }
+    internal static OutputRecoveryFingerprint[] Fingerprint(string path, bool isDirectory, CancellationToken token) =>
+        FingerprintAsync(path, isDirectory, token).GetAwaiter().GetResult();
 
-    private static void CopyArtifact(string source, string destination, bool isDirectory, IReadOnlyList<OutputRecoveryFingerprint> files, CancellationToken token)
-    {
-        if (isDirectory) Directory.CreateDirectory(destination);
-        foreach (var file in files)
-        {
-            token.ThrowIfCancellationRequested();
-            var from = isDirectory ? SafeChild(source, file.Path) : source;
-            var to = isDirectory ? SafeChild(destination, file.Path) : destination;
-            if (file.IsDirectory) { Directory.CreateDirectory(to); continue; }
-            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
-            using var input = new FileStream(from, FileMode.Open, FileAccess.Read, FileShare.Read);
-            using var output = new FileStream(to, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-            var buffer = new byte[128 * 1024];
-            int count;
-            while ((count = input.Read(buffer)) > 0) { token.ThrowIfCancellationRequested(); output.Write(buffer, 0, count); }
-            output.Flush(flushToDisk: true);
-        }
-    }
+    internal static Task<OutputRecoveryFingerprint[]> FingerprintAsync(string path, bool isDirectory, CancellationToken token) =>
+        ConversionBackend.RequestAsync<OutputRecoveryFingerprint[]>("artifact",
+            new { Mode = "fingerprint", Path = Path.GetFullPath(path), Directory = isDirectory }, token);
 
-    private static string SafeChild(string root, string relative)
-    {
-        var path = Path.GetFullPath(Path.Combine(root, relative));
-        var prefix = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-        if (Path.IsPathRooted(relative) || !path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Invalid output recovery artifact path.");
-        return path;
-    }
+    private static void CopyArtifact(string source, string destination, bool isDirectory,
+        IReadOnlyList<OutputRecoveryFingerprint> files, CancellationToken token) =>
+        ConversionBackend.RequestAsync<bool>("artifact", new
+        {
+            Mode = "copy", Path = source, Directory = isDirectory, Destination = destination, Files = files
+        }, token).GetAwaiter().GetResult();
+
+    internal static void Publish(string source, string destination, bool isDirectory) =>
+        ConversionBackend.RequestAsync<bool>("artifact", new
+        {
+            Mode = "publish", Path = Path.GetFullPath(source), Destination = Path.GetFullPath(destination), Directory = isDirectory,
+            Scratch = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(destination))!, $".{Guid.NewGuid():N}.tmp")
+        }).GetAwaiter().GetResult();
+
     private static bool IsReparsePoint(string path) => (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
     private static void TryDeleteArtifact(string path, bool isDirectory)
     {

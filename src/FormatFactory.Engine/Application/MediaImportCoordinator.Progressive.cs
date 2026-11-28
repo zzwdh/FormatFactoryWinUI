@@ -1,4 +1,5 @@
 using FormatFactoryWinUI.Models;
+using FormatFactoryWinUI.Services;
 
 namespace FormatFactoryWinUI.ApplicationServices;
 
@@ -12,15 +13,10 @@ public sealed partial class MediaImportCoordinator
         {
             var files = new List<string>();
             var lastReport = System.Diagnostics.Stopwatch.StartNew();
-            foreach (var path in Directory.EnumerateFiles(folderPath, "*", new EnumerationOptions
-            {
-                RecurseSubdirectories = true,
-                IgnoreInaccessible = true,
-                AttributesToSkip = FileAttributes.System | FileAttributes.Hidden | FileAttributes.ReparsePoint
-            }))
+            foreach (var entry in FolderDiscovery.Enumerate(folderPath, true, true, true, cancellationToken))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (FormatCatalog.SupportedExtensions.Contains(Path.GetExtension(path))) files.Add(path);
+                files.Add(entry.Path);
                 if (lastReport.ElapsedMilliseconds >= 100)
                 {
                     progress?.Report(new(true, files.Count, 0, 0));

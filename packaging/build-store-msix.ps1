@@ -19,37 +19,15 @@ $repoRoot = Split-Path $PSScriptRoot -Parent
 $metadataScript = Join-Path $repoRoot "build\RepositoryMetadata.ps1"
 $validationScript = Join-Path $repoRoot "build\validate-repository.ps1"
 . $metadataScript
+. (Join-Path $repoRoot 'build/PackageScratch.ps1')
 . (Join-Path $PSScriptRoot 'ReleaseGate.ps1')
 . (Join-Path $PSScriptRoot 'ApplicationManifest.ps1')
 $buildScript = Join-Path $PSScriptRoot "build-msix.ps1"
 $config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 $version = Get-RepositoryReleaseVersion -RepositoryRoot $repoRoot
 $packageName = [string]$config.PackageName
-$workRoot = Join-Path $repoRoot "work"
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-
-function Reset-BuildDirectory {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Path,
-        [Parameter(Mandatory)]
-        [string]$AllowedRoot
-    )
-
-    $resolvedPath = [IO.Path]::GetFullPath($Path)
-    $resolvedRoot = [IO.Path]::GetFullPath($AllowedRoot)
-    $trimCharacters = [char[]]@([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
-    $rootPrefix = $resolvedRoot.TrimEnd($trimCharacters) + [IO.Path]::DirectorySeparatorChar
-    if (-not $resolvedPath.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "拒绝清理工作区外目录：$resolvedPath"
-    }
-
-    if (Test-Path -LiteralPath $resolvedPath) {
-        Remove-Item -LiteralPath $resolvedPath -Recurse -Force
-    }
-    New-Item -ItemType Directory -Force -Path $resolvedPath | Out-Null
-}
 
 function Assert-ArchiveContainsFile {
     param(
@@ -190,6 +168,7 @@ if (-not $SkipRepositoryValidation) {
     & $validationScript -Quiet
 }
 
+$OutputDirectory = Resolve-PackageOutputDirectory $OutputDirectory
 $uploadPath = Join-Path $OutputDirectory ("{0}-{1}.msixupload" -f $packageName, $version)
 # Never leave an older upload looking like a release approved by this invocation.
 if (Test-Path -LiteralPath $uploadPath) { Remove-Item -LiteralPath $uploadPath -Force }
@@ -237,8 +216,9 @@ if (-not $CandidateOnly) {
     [void](Assert-AutomatedReleaseReport -ReportPath $reportPath -Candidate $candidate)
     Assert-ReleaseReportUnchanged -ReportPath $reportPath -Artifact $automatedReportArtifact
     New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
-    $uploadDirectory = Join-Path $workRoot ('release-upload-' + [Guid]::NewGuid().ToString('N'))
-    Reset-BuildDirectory -Path $uploadDirectory -AllowedRoot $workRoot
+    $storePackageScratch = New-PackageScratchDirectory
+    $uploadDirectory = Join-Path $storePackageScratch.FullName 'release-upload'
+    New-Item -ItemType Directory -Path $uploadDirectory | Out-Null
     Copy-Item -LiteralPath $candidate.bundle.fullPath -Destination $uploadDirectory
     [void](Assert-ReleaseArtifact -Artifact $candidate.bundle -Directory $uploadDirectory)
     $partialUpload = "$uploadPath.partial"
@@ -249,15 +229,16 @@ if (-not $CandidateOnly) {
         Move-Item -LiteralPath $partialUpload -Destination $uploadPath
     } finally {
         if (Test-Path -LiteralPath $partialUpload) { Remove-Item -LiteralPath $partialUpload -Force }
-        Remove-Item -LiteralPath $uploadDirectory -Recurse -Force
     }
     $release = [ordered]@{ schemaVersion=2; kind='approvedRelease'; sourceCommit=$candidate.sourceCommit; sourceFingerprint=$candidate.sourceFingerprint; version=$version; approvedAt=[DateTimeOffset]::UtcNow.ToString('o'); runtimeSupportUntil=(Get-ToolchainLock -RepositoryRoot $repoRoot).dotnetSupportedUntil; packages=@($candidate.packages | Select-Object architecture,fileName,bytes,sha256); upload=(Get-ReleaseArtifact -Path $uploadPath); automatedReportSha256=$automatedReportArtifact.sha256; deviceReports=@(foreach ($target in $deviceTargets) { [ordered]@{ target=$target.id; sha256=$deviceReportArtifacts[$target.id].sha256 } }) }
     $release | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $OutputDirectory ("{0}-{1}.release.json" -f $packageName,$version)) -Encoding utf8
     Write-Host "正式 MSIX 上传物通过自动化及 Windows 10 / Windows 11 设备验收：$uploadPath"
+    & (Join-Path $repoRoot 'build/Write-PackageCompletion.ps1') -RunId $storePackageScratch.Name -Version $version -OutputDirectory $OutputDirectory -Kind 'release'
     return
 }
 if ($CandidateManifestPath -or $DeviceAcceptanceDirectory -or $PerformanceBaselinePath) { throw '-CandidateOnly builds new packages; acceptance/report arguments belong to promotion.' }
 $sourceBefore = Get-ReleaseSourceSnapshot -RepositoryRoot $repoRoot
+$storePackageScratch = New-PackageScratchDirectory
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 
 $builtPackages = @{}
@@ -296,12 +277,10 @@ foreach ($architecture in "x64", "arm64") {
 
 $makeAppx = Get-Item -LiteralPath (Get-LockedWindowsSdkTool -RepositoryRoot $repoRoot -Name makeappx.exe)
 
-$bundleDirectory = Join-Path $repoRoot "work\msix-bundle"
-$uploadDirectory = Join-Path $repoRoot "work\msix-upload"
+$bundleDirectory = Join-Path $storePackageScratch.FullName 'msix-bundle'
 $bundlePath = Join-Path $OutputDirectory ("{0}-{1}.msixbundle" -f $packageName, $version)
 $uploadPath = Join-Path $OutputDirectory ("{0}-{1}.msixupload" -f $packageName, $version)
-Reset-BuildDirectory -Path $bundleDirectory -AllowedRoot $workRoot
-Reset-BuildDirectory -Path $uploadDirectory -AllowedRoot $workRoot
+New-Item -ItemType Directory -Path $bundleDirectory | Out-Null
 foreach ($staleOutput in $bundlePath, $uploadPath) {
     if (Test-Path -LiteralPath $staleOutput) {
         Remove-Item -LiteralPath $staleOutput -Force
@@ -342,3 +321,4 @@ Write-Host "仅生成候选 MSIX，未生成正式 .msixupload。提交及包 SH
 if ([string]::IsNullOrWhiteSpace($CertificatePath)) {
     Write-Warning "当前 bundle 未做本地签名；使用真实 Partner Center 包身份时可提交 Microsoft Store，由商店在发布时重新签名。商店外安装仍需使用与 Publisher 匹配且目标设备信任的证书签名。"
 }
+& (Join-Path $repoRoot 'build/Write-PackageCompletion.ps1') -RunId $storePackageScratch.Name -Version $version -OutputDirectory $OutputDirectory -Kind 'candidate'

@@ -744,6 +744,7 @@ public partial class App : Application
         await CheckNavigationMotionAsync();
         await CheckJumpListNavigationAsync();
         await CheckQueueDensityAsync();
+        await CheckQueueScrollBoundaryAsync();
         await CheckProgressStateColorsAsync();
 
         // Keep representative states for screenshots; the preceding checks use 100 cards.
@@ -961,6 +962,7 @@ public partial class App : Application
 
     private async Task CheckAsync(string name, Func<Task> action)
     {
+        TraceCheck(name);
         try { await action(); _results.Add(new { name, passed = true }); }
         catch (Exception exception) { RecordFailure(name, exception); }
     }
@@ -1098,6 +1100,7 @@ public partial class App : Application
 
     private void Check(string name, Action action)
     {
+        TraceCheck(name);
         try
         {
             action();
@@ -1107,6 +1110,13 @@ public partial class App : Application
         {
             RecordFailure(name, exception);
         }
+    }
+
+    private void TraceCheck(string name)
+    {
+        if (Environment.GetEnvironmentVariable("FORMAT_FACTORY_UI_SMOKE_TRACE") == "1")
+            File.AppendAllText(Path.Combine(_runRoot, "checks.log"),
+                $"{DateTimeOffset.Now:O} {Thread.CurrentThread.GetApartmentState()} {name}{Environment.NewLine}");
     }
 
     private void RecordFailure(string name, Exception exception)

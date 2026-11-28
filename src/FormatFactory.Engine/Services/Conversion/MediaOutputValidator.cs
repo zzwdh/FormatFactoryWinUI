@@ -48,7 +48,7 @@ internal sealed class MediaOutputValidator(MediaProbeService mediaProbe)
             if (task.Kind is MediaKind.Video or MediaKind.Audio)
             {
                 var actualOutput = await _mediaProbeService.ProbeAsync(ffprobePath, temporaryPath, cancellationToken);
-                if (!MediaSizeBudget.HasCompleteDuration(originalProbe.Duration, actualOutput.Duration, mediaOptions.FrameRate))
+                if (!await MediaSizeBudget.HasCompleteDurationAsync(originalProbe.Duration, actualOutput.Duration, mediaOptions.FrameRate, cancellationToken))
                 {
                     LogService.AppendTask(logPath, FormattableString.Invariant($"Output validation: stage=duration expected_ticks={originalProbe.Duration.Ticks} actual_ticks={actualOutput.Duration.Ticks}\n"));
                     throw new InvalidDataException(LocalizationService.T("MediaSizeOutputIncomplete"));
@@ -58,11 +58,17 @@ internal sealed class MediaOutputValidator(MediaProbeService mediaProbe)
         if (task.Kind == MediaKind.Image && mediaOptions.HasAny)
         {
             var actualOutput = await _mediaProbeService.ProbeAsync(ffprobePath, temporaryPath, cancellationToken);
-            var expected = mediaOptions.HasDimensions
-                ? mediaOptions.ResolveDimensions(originalProbe.Width, originalProbe.Height)
-                : (Width: originalProbe.Width, Height: originalProbe.Height);
-            if (actualOutput.Width != expected.Width || actualOutput.Height != expected.Height)
+            var matches = await ConversionBackend.RequestAsync<bool>("media-plan", new
             {
+                action = "validate", check = "dimensions", sourceWidth = originalProbe.Width,
+                sourceHeight = originalProbe.Height, maxWidth = mediaOptions.MaxWidth, maxHeight = mediaOptions.MaxHeight,
+                width = actualOutput.Width, height = actualOutput.Height
+            }, cancellationToken);
+            if (!matches)
+            {
+                var expected = mediaOptions.HasDimensions
+                    ? mediaOptions.ResolveDimensions(originalProbe.Width, originalProbe.Height)
+                    : (Width: originalProbe.Width, Height: originalProbe.Height);
                 LogService.AppendTask(logPath, FormattableString.Invariant($"Output validation: stage=dimensions expected_width={expected.Width} expected_height={expected.Height} actual_width={actualOutput.Width} actual_height={actualOutput.Height}\n"));
                 throw new InvalidDataException(LocalizationService.T("NativeImageValidationFailed"));
             }

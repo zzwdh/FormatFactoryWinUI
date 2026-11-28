@@ -1,6 +1,6 @@
 #include "Native.h"
 #include <xmllite.h>
-#include "miniz.h"
+#include "RustEpub.h"
 #include <array>
 #include <cctype>
 #include <cwctype>
@@ -39,53 +39,12 @@ std::vector<uint8_t> ReadStream(IStream* stream) {
     }
     deadline.Check(); return result;
 }
-static uint16_t U16(std::span<const uint8_t> bytes,size_t offset) {
-    Require(offset+2<=bytes.size()); return uint16_t(bytes[offset]|uint16_t(bytes[offset+1])<<8);
-}
-static uint32_t U32(std::span<const uint8_t> bytes,size_t offset) {
-    return uint32_t(U16(bytes,offset)) | uint32_t(U16(bytes,offset+2))<<16;
-}
-static void ValidateDirectory(std::span<const uint8_t> bytes,const Deadline& deadline) {
-    Require(bytes.size()>=22 && bytes.size()<=MaxArchive);
-    size_t end=SIZE_MAX,lower=bytes.size()>65557?bytes.size()-65557:0;
-    for(size_t i=bytes.size()-22;;--i) {
-        if(U32(bytes,i)==0x06054b50 && i+22+U16(bytes,i+20)==bytes.size()) { end=i; break; }
-        if(i==lower) break;
-    }
-    Require(end!=SIZE_MAX);
-    const auto entries=U16(bytes,end+10); const uint64_t start=U32(bytes,end+16),size=U32(bytes,end+12);
-    Require(U32(bytes,end+4)==0 && U16(bytes,end+8)==entries && entries<=MaxEntries && start+size<=end);
-    size_t position=static_cast<size_t>(start),count=0,finish=static_cast<size_t>(start+size);
-    while(position<finish) {
-        deadline.Check(); Require(++count<=MaxEntries && finish-position>=46 && U32(bytes,position)==0x02014b50);
-        auto name=U16(bytes,position+28),extra=U16(bytes,position+30),comment=U16(bytes,position+32);
-        Require(U16(bytes,position+34)==0 && !(U16(bytes,position+8)&1));
-        Require(U32(bytes,position+20)!=UINT32_MAX && U32(bytes,position+24)!=UINT32_MAX && U32(bytes,position+42)!=UINT32_MAX);
-        Require(position+46+name+extra+comment<=finish);
-        size_t extraPos=position+46+name,extraEnd=extraPos+extra;
-        while(extraPos<extraEnd) { Require(extraEnd-extraPos>=4); auto tag=U16(bytes,extraPos),length=U16(bytes,extraPos+2); Require(tag!=1 && extraPos+4+length<=extraEnd); extraPos+=4+length; }
-        position+=46+name+extra+comment;
-    }
-    Require(count==entries);
-}
 std::string ResolvePath(std::string_view packagePath,std::string_view href) {
-    href=href.substr(0,href.find_first_of("#?")); std::string decoded;
-    for(size_t i=0;i<href.size();++i) {
-        if(href[i]=='%') {
-            Require(i+2<href.size()); auto hex=[](char c)->int { if(c>='0'&&c<='9')return c-'0'; if(c>='a'&&c<='f')return c-'a'+10; if(c>='A'&&c<='F')return c-'A'+10; return -1; };
-            int high=hex(href[i+1]),low=hex(href[i+2]); Require(high>=0&&low>=0); decoded+=char(high*16+low); i+=2;
-        } else decoded+=href[i];
-    }
-    Require(!decoded.empty() && decoded[0]!='/' && decoded.find_first_of("\\:")==std::string::npos && decoded.find('\0')==std::string::npos);
-    Wide(decoded); // Reject malformed UTF-8 before looking up ZIP names.
-    auto slash=packagePath.rfind('/'); std::string joined=slash==std::string_view::npos?decoded:std::string(packagePath.substr(0,slash+1))+decoded;
-    std::vector<std::string> parts;
-    for(size_t begin=0;begin<=joined.size();) {
-        auto next=joined.find('/',begin); if(next==std::string::npos)next=joined.size(); auto part=joined.substr(begin,next-begin);
-        if(part=="..") { Require(!parts.empty()); parts.pop_back(); } else if(!part.empty()&&part!=".")parts.push_back(part);
-        if(next==joined.size())break; begin=next+1;
-    }
-    std::string result; for(const auto& part:parts) { if(!result.empty())result+='/'; result+=part; } Require(!result.empty()); return result;
+    std::string result(packagePath.size()+href.size(),'\0');
+    size_t size=0;
+    Check(ff_epub_path(packagePath.data(),packagePath.size(),href.data(),href.size(),result.data(),result.size(),&size));
+    result.resize(size);
+    return result;
 }
 struct XmlNode {
     std::wstring name,ns,text; std::map<std::wstring,std::wstring> attributes;
@@ -131,24 +90,24 @@ static std::wstring Normalize(std::wstring_view value) {
     for(wchar_t c:value) { if(iswspace(c))space=!result.empty(); else { if(space)result+=L' '; result+=c; space=false; } } return result;
 }
 struct Zip {
-    mz_zip_archive archive{}; bool initialized=false; const Deadline& deadline;
-    std::map<std::string,mz_uint> entries;
-    Zip(std::span<const uint8_t> bytes,const Deadline& value):deadline(value) {
-        ValidateDirectory(bytes,deadline); Require(mz_zip_reader_init_mem(&archive,bytes.data(),bytes.size(),0)!=0); initialized=true;
-        try { auto count=mz_zip_reader_get_num_files(&archive); Require(count<=MaxEntries);
-            for(mz_uint i=0;i<count;++i) { deadline.Check(); auto length=mz_zip_reader_get_filename(&archive,i,nullptr,0); Require(length>0&&length<=65536); std::string name(length,'\0'); Require(mz_zip_reader_get_filename(&archive,i,name.data(),length)==length); name.pop_back(); Require(name.find('\0')==std::string::npos && entries.emplace(name,i).second); }
-        } catch(...) { mz_zip_reader_end(&archive); initialized=false; throw; }
+    std::span<const uint8_t> archive;
+    const Deadline& deadline;
+    void* index=nullptr;
+    Zip(std::span<const uint8_t> bytes,const Deadline& value):archive(bytes),deadline(value) {
+        deadline.Check();
+        Check(ff_epub_open(bytes.data(),bytes.size(),&index));
     }
-    ~Zip() { if(initialized)mz_zip_reader_end(&archive); }
+    Zip(const Zip&)=delete;
+    Zip& operator=(const Zip&)=delete;
+    ~Zip() { ff_epub_close(index); }
     std::vector<uint8_t> Bytes(const std::string& name,size_t limit) {
-        deadline.Check(); auto it=entries.find(name); Require(it!=entries.end()); mz_zip_archive_file_stat stat{}; Require(mz_zip_reader_file_stat(&archive,it->second,&stat)!=0);
-        Require(stat.m_uncomp_size<=limit && !(stat.m_uncomp_size>1024*1024 && stat.m_uncomp_size>std::max<mz_uint64>(1,stat.m_comp_size)*200));
-        struct Sink { std::vector<uint8_t> bytes; size_t limit; const Deadline* deadline; bool failed=false; } sink{{},limit,&deadline}; sink.bytes.reserve(static_cast<size_t>(stat.m_uncomp_size));
-        auto callback=[](void* opaque,mz_uint64 offset,const void* data,size_t count)->size_t {
-            auto& value=*static_cast<Sink*>(opaque);
-            try { value.deadline->Check(); Require(offset==value.bytes.size() && count<=value.limit-value.bytes.size()); auto p=static_cast<const uint8_t*>(data); value.bytes.insert(value.bytes.end(),p,p+count); return count; } catch(...) { value.failed=true; return 0; }
-        };
-        Require(mz_zip_reader_extract_to_callback(&archive,it->second,callback,&sink,0)!=0 && !sink.failed && sink.bytes.size()==stat.m_uncomp_size); deadline.Check(); return sink.bytes;
+        deadline.Check();
+        size_t count=0;
+        Check(ff_epub_size(index,name.data(),name.size(),limit,&count));
+        std::vector<uint8_t> bytes(count);
+        Check(ff_epub_read(index,archive.data(),archive.size(),name.data(),name.size(),bytes.data(),count));
+        deadline.Check();
+        return bytes;
     }
     std::unique_ptr<XmlNode> Document(const std::string& path) {
         auto bytes=Bytes(path,MaxXml);

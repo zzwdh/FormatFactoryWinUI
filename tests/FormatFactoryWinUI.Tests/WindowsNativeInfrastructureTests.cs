@@ -1,5 +1,6 @@
-using System.Buffers.Binary;
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Text.Json;
 using FormatFactoryWinUI.Models;
 using FormatFactoryWinUI.Services;
 
@@ -125,19 +126,61 @@ public sealed class WindowsNativeInfrastructureTests
     }
 
     [Fact]
-    public void ReadDirectoryChangesParser_ParsesRenamePairAndUnicodeName()
+    public async Task NativeWatchIsActiveOnReturnAndReleasesIdleSubscription()
     {
-        var buffer = BuildDirectoryChanges(
-            (NativeDirectoryChangeAction.RenamedOldName, "旧名称.docx"),
-            (NativeDirectoryChangeAction.RenamedNewName, "新名称.docx"));
+        using var directory = new TemporaryDirectory();
+        var nested = Directory.CreateDirectory(Path.Combine(directory.Path, "子目录")).FullName;
+        using var watcher = new NativeDirectoryWatcher();
+        var added = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var renamed = new TaskCompletionSource<DirectoryChangeEventArgs>(TaskCreationOptions.RunContinuationsAsynchronously);
+        watcher.Changed += (_, change) =>
+        {
+            if (change.Kind == DirectoryChangeKind.Added) added.TrySetResult(change.FullPath);
+            if (change.Kind == DirectoryChangeKind.Renamed) renamed.TrySetResult(change);
+        };
+        watcher.Error += (_, error) =>
+        {
+            added.TrySetException(error.GetException());
+            renamed.TrySetException(error.GetException());
+        };
+        Assert.True(watcher.Start(directory.Path, includeSubdirectories: true));
+        var oldPath = Path.Combine(nested, "旧名😀.docx");
+        var newPath = Path.Combine(nested, "新名😀.docx");
+        await File.WriteAllTextAsync(oldPath, "content");
+        Assert.Equal(oldPath, await added.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+        File.Move(oldPath, newPath);
+        var change = await renamed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(oldPath, change.OldFullPath);
+        Assert.Equal(newPath, change.FullPath);
+        await Task.Run(watcher.Stop).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False(watcher.IsRunning);
+        Directory.Delete(nested, recursive: true);
+    }
 
-        var result = ReadDirectoryChangesBackend.ParseNotifications(buffer);
-
-        Assert.Equal(2, result.Count);
-        Assert.Equal(NativeDirectoryChangeAction.RenamedOldName, result[0].Action);
-        Assert.Equal("旧名称.docx", result[0].RelativePath);
-        Assert.Equal(NativeDirectoryChangeAction.RenamedNewName, result[1].Action);
-        Assert.Equal("新名称.docx", result[1].RelativePath);
+    [Fact]
+    public async Task IdleWatchWorkerExitsWhenItsOwnerPipeCloses()
+    {
+        using var directory = new TemporaryDirectory();
+        var start = new ProcessStartInfo(ConversionWorkerProcess.ExecutablePath)
+        {
+            UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardInput = true, RedirectStandardOutput = true,
+            ArgumentList = { ConversionWorkerProcess.ProtocolVersionArgument, "watch-directory" }
+        };
+        using var process = Process.Start(start)!;
+        try
+        {
+            await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new { path = directory.Path, subtree = false }));
+            await process.StandardInput.FlushAsync();
+            Assert.Equal("ready", await process.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5)));
+            process.StandardInput.Close();
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(0, process.ExitCode);
+        }
+        finally
+        {
+            if (!process.HasExited) { process.Kill(); await process.WaitForExitAsync(); }
+        }
     }
 
     [Fact]
@@ -171,37 +214,6 @@ public sealed class WindowsNativeInfrastructureTests
         energySaver,
         TimeSpan.FromHours(2),
         DateTimeOffset.UtcNow);
-
-    private static byte[] BuildDirectoryChanges(
-        params (NativeDirectoryChangeAction Action, string Name)[] changes)
-    {
-        var records = changes.Select(change =>
-        {
-            var name = System.Text.Encoding.Unicode.GetBytes(change.Name);
-            var length = Align4(12 + name.Length);
-            return (change.Action, Name: name, Length: length);
-        }).ToArray();
-        var buffer = new byte[records.Sum(record => record.Length)];
-        var offset = 0;
-        for (var index = 0; index < records.Length; index++)
-        {
-            var record = records[index];
-            BinaryPrimitives.WriteUInt32LittleEndian(
-                buffer.AsSpan(offset, 4),
-                index == records.Length - 1 ? 0u : checked((uint)record.Length));
-            BinaryPrimitives.WriteUInt32LittleEndian(
-                buffer.AsSpan(offset + 4, 4),
-                (uint)record.Action);
-            BinaryPrimitives.WriteUInt32LittleEndian(
-                buffer.AsSpan(offset + 8, 4),
-                checked((uint)record.Name.Length));
-            record.Name.CopyTo(buffer.AsSpan(offset + 12));
-            offset += record.Length;
-        }
-        return buffer;
-    }
-
-    private static int Align4(int value) => (value + 3) & ~3;
 
     private sealed class FakeOpticalBackend : IOpticalDeviceNotificationBackend
     {

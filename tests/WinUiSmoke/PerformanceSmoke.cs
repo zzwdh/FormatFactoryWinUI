@@ -42,7 +42,6 @@ public partial class App
             construction.Add(elapsed);
             constructionMemory.Add(ReadPrivateBytes());
             SetField("_settingsAvailable", true);
-            SetField("_nativeCapabilitiesRefreshing", true); // no device probes in timing samples
             Invoke("ApplyLocalization");
             timer.Restart();
             Invoke("EnsureSettingsViewLoaded");

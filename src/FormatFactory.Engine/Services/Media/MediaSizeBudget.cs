@@ -4,71 +4,48 @@ namespace FormatFactoryWinUI.Services;
 
 internal static class MediaSizeBudget
 {
-    internal const int MaximumMediaAttempts = 3;
     internal const int MaximumImageAttempts = 9;
 
-    public static MediaConversionOptions Initial(MediaTask task, MediaConversionOptions options)
+    public static MediaConversionOptions Initial(MediaTask task, MediaConversionOptions options) =>
+        CalculateAsync(task, options, null, CancellationToken.None).GetAwaiter().GetResult();
+
+    public static MediaConversionOptions Reduce(MediaTask task, MediaConversionOptions options, long measuredBytes) =>
+        CalculateAsync(task, options, measuredBytes, CancellationToken.None).GetAwaiter().GetResult();
+
+    internal static async Task<MediaConversionOptions> CalculateAsync(MediaTask task, MediaConversionOptions options,
+        long? measured, CancellationToken token)
     {
         if (options.TargetSizeBytes is not { } limit || task.Kind == MediaKind.Image) return options;
-        var duration = task.Probe.Duration.TotalSeconds;
-        if (!double.IsFinite(duration) || duration <= 0)
-            throw new InvalidDataException(LocalizationService.T("MediaSizeDurationRequired"));
-        var budgetKbps = Math.Floor(limit * 0.95 * 8 / duration / 1000);
-        if (FormatCatalog.IsAudioFormat(task.TargetFormat))
+        var rates = await ConversionBackend.RequestAsync<BudgetRates>("media-plan", Describe(task, options, limit, measured), token).ConfigureAwait(false);
+        if (rates.Error is { } key) throw new InvalidDataException(LocalizationService.T(key));
+        return options with { VideoBitrateKbps = rates.VideoBitrate, AudioBitrateKbps = rates.AudioBitrate };
+    }
+
+    internal static object Describe(MediaTask task, MediaConversionOptions options, long limit, long? measured)
+    {
+        var audio = FormatCatalog.IsAudioFormat(task.TargetFormat);
+        return new
         {
-            var audio = SupportedAudioBitrate(task.TargetFormatId, budgetKbps);
-            if (audio < 8) throw CannotMeet();
-            return options with { AudioBitrateKbps = audio };
-        }
-        var tracks = CompatibleAudioTrackPolicy.GetSelectedAudioTracks(task, task.Probe).Count;
-        var audioKbps = options.AudioBitrateKbps ?? DefaultAudioBitrate(task);
-        var videoKbps = budgetKbps - audioKbps * tracks;
-        if (videoKbps < 1) throw CannotMeet();
-        return options with
-        {
-            AudioBitrateKbps = tracks > 0 ? audioKbps : null,
-            VideoBitrateKbps = (int)Math.Min(200000, videoKbps)
+            action = "budget", target = task.TargetFormatId, audioOutput = audio,
+            modernAudio = FormatCatalog.ContainerForVideoTarget(task.TargetFormat) == "WEBM" ||
+                FormatCatalog.VideoCodecForTarget(task.TargetFormat) is "vp9" or "av1",
+            qualityMode = task.ConversionMode == "quality", durationTicks = task.Probe.Duration.Ticks,
+            limit, tracks = audio ? 0 : CompatibleAudioTrackPolicy.GetSelectedAudioTracks(task, task.Probe).Count,
+            videoBitrate = options.VideoBitrateKbps, audioBitrate = options.AudioBitrateKbps, measured
         };
     }
 
-    public static MediaConversionOptions Reduce(MediaTask task, MediaConversionOptions options, long measuredBytes)
-    {
-        if (options.TargetSizeBytes is not { } limit || measuredBytes <= 0) throw CannotMeet();
-        var ratio = Math.Min(0.9, limit * 0.95 / measuredBytes);
-        if (FormatCatalog.IsAudioFormat(task.TargetFormat))
-        {
-            var bitrate = SupportedAudioBitrate(task.TargetFormatId, Math.Floor(options.AudioBitrateKbps!.Value * ratio));
-            if (bitrate < 8 || bitrate >= options.AudioBitrateKbps.Value) throw CannotMeet();
-            return options with { AudioBitrateKbps = bitrate };
-        }
-        var reduced = (int)Math.Floor(options.VideoBitrateKbps!.Value * ratio);
-        if (reduced < 1 || reduced >= options.VideoBitrateKbps.Value) throw CannotMeet();
-        return options with { VideoBitrateKbps = reduced };
-    }
-
-    private static int DefaultAudioBitrate(MediaTask task) =>
-        FormatCatalog.ContainerForVideoTarget(task.TargetFormat) == "WEBM" ||
-        FormatCatalog.VideoCodecForTarget(task.TargetFormat) is "vp9" or "av1"
-            ? task.ConversionMode == "quality" ? 160 : 128 : 192;
-
-    // MP3/AC-3/WMA encoders need discrete rates or impose small codec-specific upper limits.
-    private static int SupportedAudioBitrate(string target, double ceiling)
-    {
-        var candidates = target switch
-        {
-            "mp3" => new[] { 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320 },
-            "ac3" => [32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 448, 512, 576, 640],
-            "wma" => [24, 32, 40, 48, 64, 80, 96, 128, 160, 192, 256, 320],
-            _ => []
-        };
-        if (candidates.Length > 0) return candidates.LastOrDefault(value => value <= ceiling);
-        return (int)Math.Clamp(ceiling, 0, target == "opus" ? 512 : target == "eac3" ? 640 : 1536);
-    }
-
+    private sealed record BudgetRates([property: System.Text.Json.Serialization.JsonPropertyName("error")] string? Error,
+        [property: System.Text.Json.Serialization.JsonPropertyName("videoBitrate")] int? VideoBitrate,
+        [property: System.Text.Json.Serialization.JsonPropertyName("audioBitrate")] int? AudioBitrate);
     public static InvalidDataException CannotMeet() => new(LocalizationService.T("MediaSizeCannotMeetTarget"));
 
-    public static bool HasCompleteDuration(TimeSpan source, TimeSpan output, double? frameRate = null) => source > TimeSpan.Zero &&
-        output > TimeSpan.Zero && Math.Abs((source - output).TotalSeconds) <= Math.Max(0.25, frameRate.HasValue ? 1 / frameRate.Value : 0);
+    public static bool HasCompleteDuration(TimeSpan source, TimeSpan output, double? frameRate = null) =>
+        HasCompleteDurationAsync(source, output, frameRate, CancellationToken.None).GetAwaiter().GetResult();
+
+    internal static Task<bool> HasCompleteDurationAsync(TimeSpan source, TimeSpan output, double? frameRate, CancellationToken token) =>
+        ConversionBackend.RequestAsync<bool>("media-plan", new { action = "validate", check = "duration",
+            source = source.Ticks, output = output.Ticks, frameRate }, token);
 
     public static int InitialImageQuality(MediaTask task, MediaConversionOptions options) =>
         options.ImageQuality ?? task.ConversionMode switch { "quality" => 95, "fast" => 75, _ => 85 };
@@ -78,41 +55,45 @@ internal static class MediaSizeBudget
     {
         var bestPath = outputPath + ".best";
         var ownsBest = false;
-        var low = 1;
-        var high = initialQuality;
-        var quality = high;
+        using var session = new MediaWorkerSession(token);
+        await session.SendAsync(new { mode = "imageSize", path = outputPath, limit, initialQuality });
         try
         {
-            for (var attempt = 1; attempt <= MaximumImageAttempts && low <= high; attempt++)
+            while (true)
             {
-                token.ThrowIfCancellationRequested();
-                if (File.Exists(outputPath)) File.Delete(outputPath);
-                await encode(quality, attempt, token);
-                token.ThrowIfCancellationRequested();
-                if (!File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
-                    throw new InvalidDataException(LocalizationService.T("NativeImageValidationFailed"));
-                if (new FileInfo(outputPath).Length <= limit)
+                var step = await session.ReadAsync<ImageStep>();
+                switch (step.Event)
                 {
-                    await using (var source = File.OpenRead(outputPath))
-                    await using (var destination = new FileStream(bestPath, ownsBest ? FileMode.Create : FileMode.CreateNew,
-                        FileAccess.Write, FileShare.None, 81920, useAsync: true))
-                    {
-                        ownsBest = true;
-                        await source.CopyToAsync(destination, token);
-                    }
-                    if (quality == initialQuality) break;
-                    low = quality + 1;
+                    case "image":
+                        if (File.Exists(outputPath)) File.Delete(outputPath);
+                        await encode(step.Quality, step.Attempt, token);
+                        await session.SendAsync(new { exitCode = 0 });
+                        break;
+                    case "capture":
+                        await using (var source = File.OpenRead(outputPath))
+                        await using (var destination = new FileStream(bestPath, ownsBest ? FileMode.Create : FileMode.CreateNew,
+                            FileAccess.Write, FileShare.None, 81920, useAsync: true))
+                        {
+                            ownsBest = true;
+                            await source.CopyToAsync(destination, token);
+                        }
+                        break;
+                    case "error":
+                        await session.CompleteAsync();
+                        throw new InvalidDataException(LocalizationService.T(step.Key!));
+                    case "complete":
+                        await session.CompleteAsync();
+                        token.ThrowIfCancellationRequested();
+                        File.Copy(bestPath, outputPath, true);
+                        return;
+                    default: throw new InvalidDataException("Unknown image size search event.");
                 }
-                else high = quality - 1;
-                quality = low + (high - low) / 2;
             }
-            if (!ownsBest) throw CannotMeet();
-            token.ThrowIfCancellationRequested();
-            File.Copy(bestPath, outputPath, true);
         }
         finally
         {
             if (ownsBest && File.Exists(bestPath)) File.Delete(bestPath);
         }
     }
+    private sealed record ImageStep(string Event, int Quality, int Attempt, string? Key);
 }

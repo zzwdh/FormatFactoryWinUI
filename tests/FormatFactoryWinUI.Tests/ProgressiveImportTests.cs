@@ -58,6 +58,16 @@ public sealed class ProgressiveImportTests
     }
 
     [Fact]
+    public async Task FolderDiscoveryRecognizesAnExtensionOnlyFilename()
+    {
+        using var directory = new TemporaryDirectory();
+        foreach (var name in new[] { ".mP3", "clip.MP3", ".unknown", "extensionless" })
+            File.WriteAllText(Path.Combine(directory.Path, name), "fixture");
+        var paths = await new MediaImportCoordinator().DiscoverFolderAsync(directory.Path);
+        Assert.Equal(new[] { ".mP3", "clip.MP3" }, paths.Select(Path.GetFileName).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
     public async Task LargeImportPublishesBeforeFinalProbeAndReportsAccurateCounts()
     {
         using var directory = new TemporaryDirectory();

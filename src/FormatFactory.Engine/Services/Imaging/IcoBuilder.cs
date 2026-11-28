@@ -1,33 +1,44 @@
+using System.ComponentModel;
+using System.Globalization;
+
 namespace FormatFactoryWinUI.Services;
 
 public static class IcoBuilder
 {
     public static void Build(IEnumerable<(int Size, string PngPath)> frames, string outputPath)
     {
-        var entries = frames.Select(frame => (frame.Size, Data: File.ReadAllBytes(frame.PngPath))).ToArray();
-        using var stream = File.Create(outputPath);
-        using var writer = new BinaryWriter(stream);
-        writer.Write((ushort)0);
-        writer.Write((ushort)1);
-        writer.Write((ushort)entries.Length);
-
-        var dataOffset = 6 + entries.Length * 16;
-        foreach (var entry in entries)
+        var temporary = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath))!, $".{Guid.NewGuid():N}.ico");
+        try
         {
-            writer.Write((byte)(entry.Size >= 256 ? 0 : entry.Size));
-            writer.Write((byte)(entry.Size >= 256 ? 0 : entry.Size));
-            writer.Write((byte)0);
-            writer.Write((byte)0);
-            writer.Write((ushort)1);
-            writer.Write((ushort)32);
-            writer.Write((uint)entry.Data.Length);
-            writer.Write((uint)dataOffset);
-            dataOffset += entry.Data.Length;
+            BuildAsync(frames, temporary, CancellationToken.None).GetAwaiter().GetResult();
+            File.Move(temporary, outputPath, overwrite: true);
         }
+        finally { File.Delete(temporary); }
+    }
 
-        foreach (var entry in entries)
+    internal static async Task BuildAsync(IEnumerable<(int Size, string PngPath)> frames, string temporaryOutput,
+        CancellationToken cancellationToken)
+    {
+        var arguments = new List<string> { ConversionWorkerProcess.ProtocolVersionArgument, "ico-pack", "--output", temporaryOutput };
+        foreach (var (size, path) in frames)
         {
-            writer.Write(entry.Data);
+            arguments.Add(size.ToString(CultureInfo.InvariantCulture));
+            arguments.Add(path);
         }
+        var result = await ProcessRunner.RunAsync(ConversionWorkerProcess.ExecutablePath, arguments,
+            Timeout.InfiniteTimeSpan, new ProcessRunOptions { MaximumOutputBytes = 1024, MaximumErrorBytes = 1024 },
+            cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (result.ExitCode == 0 && result.StandardOutput.TrimEnd('\r', '\n') == "ok" &&
+            result.StandardError.Length == 0 && !result.OutputTruncated) return;
+
+        var error = result.StandardError.Trim().Split(' ');
+        if (error is ["error", "io", var code] && int.TryParse(code, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number))
+        {
+            var cause = new Win32Exception(number);
+            throw new IOException(cause.Message, cause);
+        }
+        throw new InvalidDataException(LocalizationService.T("ConversionUiToolExecutionFailed",
+            ConversionWorkerProcess.FileName, result.ExitCode, result.StandardError.Trim()));
     }
 }

@@ -80,6 +80,23 @@ public sealed class FailureResolutionTests
     }
 
     [Fact]
+    public void RestoredRow_ResolvesCurrentSourceOnFirstDisplayAndAfterActionRefresh()
+    {
+        using var directory = new TemporaryDirectory();
+        var model = FailedTask(directory.Path);
+        model.LastError = "No space left on device";
+        using var view = new MediaTaskViewModel(model);
+
+        // The source can disappear between queue restoration and realizing this row.
+        File.Delete(model.InputPath);
+        Assert.Equal(FailureResolutionAction.LocateSource, view.FailureAction);
+
+        File.WriteAllText(model.InputPath, "restored");
+        view.RefreshQueueActions();
+        Assert.Equal(FailureResolutionAction.ChooseOutputDirectory, view.FailureAction);
+    }
+
+    [Fact]
     public void ViewModel_RefreshesActionFromDiagnosticsAndKeepsRawError()
     {
         using var directory = new TemporaryDirectory();

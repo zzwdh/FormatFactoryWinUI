@@ -35,7 +35,7 @@ public sealed class ImagePdfWriter
                 cancellationToken);
             if (!validation.IsValid) throw new InvalidDataException(validation.Message ?? LocalizationService.T("ConversionUiGeneratedPdfInvalid"));
             cancellationToken.ThrowIfCancellationRequested();
-            File.Move(temporary, output, overwrite: false);
+            OutputRecoveryService.Publish(temporary, output, false);
         }
         finally
         {

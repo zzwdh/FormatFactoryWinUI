@@ -201,6 +201,8 @@ public sealed class LocalizationServiceTests
         var productionSource = string.Join(
             Environment.NewLine,
             RepositoryTestContext.EnumerateApplicationSources("*.cs")
+                .Concat(Directory.EnumerateFiles(Path.Combine(sourceRoot, "FormatFactory.ConversionWorker", "src"),
+                    "*.rs", SearchOption.AllDirectories))
                 .Where(path => !path.StartsWith(localizationRoot, StringComparison.OrdinalIgnoreCase))
                 .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
                 .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))

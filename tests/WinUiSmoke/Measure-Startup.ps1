@@ -76,6 +76,7 @@ WINDOWS_APP_SDK_REFERENCES
     <Content Include="HOST_SOURCE/Assets/*" Link="Assets/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="HOST_SOURCE/feedback-config.json" Link="feedback-config.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <Import Project="REPO_ROOT/build/ConversionWorker.targets" />
 </Project>
 '@
 foreach ($replacement in @{ HOST_SOURCE = $hostSource; REPO_ROOT = $repoRoot; RUN_ROOT = $runRoot }.GetEnumerator()) {

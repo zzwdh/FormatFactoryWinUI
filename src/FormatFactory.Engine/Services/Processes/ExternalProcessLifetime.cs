@@ -18,8 +18,12 @@ internal sealed class ExternalProcessLifetime : IDisposable
         Process = process;
         Job = job;
         _observe = observe;
+        // The handshake and final pipe drain can both observe a short-lived worker.
+        // Share one exit subscription so cancelling startup cannot detach the final waiter.
+        Exited = process.WaitForExitAsync();
     }
 
+    public Task Exited { get; }
     public Process Process { get; }
     public ProcessJob? Job { get; }
 
@@ -57,7 +61,7 @@ internal sealed class ExternalProcessLifetime : IDisposable
         var guardedPipes = pipeTasks.Select(TerminateOnPipeFailureAsync).ToArray();
         try
         {
-            await Process.WaitForExitAsync(waitSource.Token).ConfigureAwait(false);
+            await Exited.WaitAsync(waitSource.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -93,7 +97,7 @@ internal sealed class ExternalProcessLifetime : IDisposable
 
     private async Task TerminateAndDrainAsync(Task[] pipeTasks)
     {
-        try { await Process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); }
+        try { await Exited.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); }
         catch { /* Preserve cancellation/timeout. */ }
         Observe(ProcessLifetimeSignal.CancellationJobCleanup);
         Job?.Dispose();

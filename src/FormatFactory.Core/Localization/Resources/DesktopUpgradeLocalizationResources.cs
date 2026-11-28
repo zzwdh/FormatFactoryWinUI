@@ -15,3 +15,4 @@ internal static class DesktopUpgradeLocalizationResources
         new("DesktopUpgradeRefreshHistory", ["Refresh history", "刷新历史记录", "重新整理歷程記錄", "履歴を更新", "기록 새로 고침", "Actualizar historial", "Actualiser l’historique", "Verlauf aktualisieren", "Atualizar histórico", "Обновить историю", "Aggiorna cronologia", "Geschiedenis vernieuwen", "Odśwież historię", "Geçmişi yenile", "تحديث السجل"])
     ]);
 }
+

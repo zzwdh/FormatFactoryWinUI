@@ -84,37 +84,6 @@ public static partial class ArchiveInput
     public static IReadOnlyList<string> NormalizeInputs(IEnumerable<string> paths) =>
         paths.Select(GetPrimaryPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
-    internal static void ValidateVolumes(string primary)
-    {
-        if (!File.Exists(primary))
-            throw new ArchiveConversionException(ArchiveFailureCode.MissingVolume, "The archive or its first volume is missing.");
-        var name = Path.GetFileName(primary);
-        if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-        {
-            var zipStem = name[..^4];
-            var zipNumbers = Directory.EnumerateFiles(Path.GetDirectoryName(primary)!)
-                .Select(path => SplitZip().Match(Path.GetFileName(path)))
-                .Where(match => match.Success && string.Equals(match.Groups["stem"].Value, zipStem, StringComparison.OrdinalIgnoreCase))
-                .Select(match => long.TryParse(match.Groups["number"].Value, out var number) ? number : -1)
-                .Order().ToArray();
-            if (zipNumbers.Where((number, index) => number != index + 1L).Any())
-                throw new ArchiveConversionException(ArchiveFailureCode.MissingVolume, "One or more ZIP archive volumes are missing.");
-        }
-        var part = PartRar().Match(name);
-        var numbered = NumberedVolume().Match(name);
-        if (!part.Success && !numbered.Success) return;
-        var matcher = part.Success ? PartRar() : NumberedVolume();
-        var stem = (part.Success ? part : numbered).Groups["stem"].Value;
-        var numbers = Directory.EnumerateFiles(Path.GetDirectoryName(primary)!).Select(path => matcher.Match(Path.GetFileName(path)))
-            .Where(match => match.Success && string.Equals(match.Groups["stem"].Value, stem, StringComparison.OrdinalIgnoreCase))
-            .Select(match => long.TryParse(match.Groups["number"].Value, out var number) ? number : -1).Order().ToArray();
-        if (numbers.Length == 0 || numbers[0] != 1 || numbers.Where((number, index) => number != index + 1L).Any())
-            throw new ArchiveConversionException(ArchiveFailureCode.MissingVolume, "One or more archive volumes are missing.");
-    }
-
-    internal static bool IsCompressedTar(string path) => new[] { ".tar.gz", ".tar.xz", ".tgz", ".txz" }
-        .Any(extension => path.EndsWith(extension, StringComparison.OrdinalIgnoreCase));
-
     internal static string OutputStem(string primary)
     {
         var name = Path.GetFileName(primary);

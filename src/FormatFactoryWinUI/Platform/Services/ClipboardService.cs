@@ -2,7 +2,6 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using FormatFactoryWinUI.Documents;
 using Windows.ApplicationModel.DataTransfer;
-using Windows.Data.Html;
 using Windows.Graphics.Imaging;
 using Windows.Storage;
 using Windows.Storage.Streams;
@@ -45,13 +44,16 @@ internal static class ClipboardService
         {
             var html = await ReadAvailableFormatAsync(async () => await data.GetHtmlFormatAsync());
             if (html is not null)
-                return new[] { MaterializeDocument(HtmlUtilities.ConvertToText(HtmlFormatHelper.GetStaticFragment(html)), "HTML", importDirectory) };
+            {
+                var fragmentText = await ConversionBackend.RequestAsync<string>("clipboard-html", HtmlFormatHelper.GetStaticFragment(html));
+                return new[] { await MaterializeDocumentAsync(fragmentText, "HTML", importDirectory) };
+            }
         }
         if (data.Contains(StandardDataFormats.Rtf))
         {
             var rtf = await ReadAvailableFormatAsync(async () => await data.GetRtfAsync());
             if (rtf is not null)
-                return new[] { MaterializeDocument(ConvertRtfToText(rtf), "RTF", importDirectory) };
+                return new[] { await MaterializeDocumentAsync(ConvertRtfToText(rtf), "RTF", importDirectory) };
         }
         if (data.Contains(StandardDataFormats.Bitmap))
         {
@@ -60,7 +62,7 @@ internal static class ClipboardService
                 return new[] { await MaterializeBitmapAsync(input, importDirectory) };
         }
         if (text is not null)
-            return new[] { MaterializeDocument(text, LocalizationService.T("GeneralServiceClipboardTextSource"), importDirectory) };
+            return new[] { await MaterializeDocumentAsync(text, LocalizationService.T("GeneralServiceClipboardTextSource"), importDirectory) };
 
         return [];
     }
@@ -82,7 +84,7 @@ internal static class ClipboardService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-    private static string MaterializeDocument(string text, string sourceLabel, string? importDirectory)
+    private static async Task<string> MaterializeDocumentAsync(string text, string sourceLabel, string? importDirectory)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -90,20 +92,8 @@ internal static class ClipboardService
         }
 
         var outputPath = CreateImportPath("docx", importDirectory);
-        var temporaryPath = outputPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try
-        {
-            PlainTextDocxWriter.Write(temporaryPath, LocalizationService.T("GeneralServiceClipboardImportTitle", sourceLabel), text);
-            File.Move(temporaryPath, outputPath, overwrite: false);
-            return outputPath;
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath))
-            {
-                File.Delete(temporaryPath);
-            }
-        }
+        await PlainTextDocxWriter.WriteAsync(outputPath, LocalizationService.T("GeneralServiceClipboardImportTitle", sourceLabel), text);
+        return outputPath;
     }
 
     private static async Task<string> MaterializeBitmapAsync(IRandomAccessStream input, string? importDirectory)

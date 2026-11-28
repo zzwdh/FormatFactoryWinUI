@@ -26,7 +26,7 @@ internal sealed class MediaConversionPreparation(MediaInputPreflightService inpu
         try
         {
             mediaOptions = MediaConversionOptions.FromTask(task);
-            animation = ImagePreservationPolicy.ValidateFfmpegInput(task, cancellationToken);
+            animation = await ImagePreservationPolicy.ValidateFfmpegInputAsync(task, cancellationToken);
             if (task.Kind is MediaKind.Video or MediaKind.Audio)
             {
                 LogService.AppendTask(logPath, RuntimeFailureDiagnostics.TaskFacts(task, Guid.NewGuid()));
@@ -109,10 +109,10 @@ internal sealed class MediaConversionPreparation(MediaInputPreflightService inpu
                 actual.PageCount = Math.Max(actual.PageCount, known.PageCount);
                 actual.IsAnimated |= known.IsAnimated;
                 task.Probe = actual;
-                animation = ImagePreservationPolicy.ValidateFfmpegInput(task, cancellationToken);
+                animation = await ImagePreservationPolicy.ValidateFfmpegInputAsync(task, cancellationToken);
             }
             mediaOptions.Validate(task);
-            _ = MediaSizeBudget.Initial(task, mediaOptions);
+            _ = await MediaSizeBudget.CalculateAsync(task, mediaOptions, null, cancellationToken);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception exception) when (exception is NotSupportedException or InvalidDataException or IOException or

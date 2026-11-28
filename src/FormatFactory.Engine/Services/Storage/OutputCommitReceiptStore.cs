@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Security.Cryptography;
 using System.Text.Json;
 using FormatFactoryWinUI.Models;
 
@@ -81,15 +80,14 @@ public sealed class OutputCommitReceiptStore
                         !Path.IsPathFullyQualified(stagedAssets) ||
                         !string.Equals(Path.GetDirectoryName(stagedAssets), Path.GetDirectoryName(finalAssets), StringComparison.OrdinalIgnoreCase) ||
                         !Verify(stagedAssets, true, receipt.CompanionFiles, receipt.CompanionCreationTimeUtcTicks)) return null;
-                    Directory.Move(stagedAssets, finalAssets);
+                    OutputRecoveryService.Publish(stagedAssets, finalAssets, true);
                 }
             }
             if (Verify(reservation.FinalPath, reservation.IsDirectory, receipt.Files, receipt.CreationTimeUtcTicks))
                 return reservation.FinalPath;
             if (File.Exists(reservation.FinalPath) || Directory.Exists(reservation.FinalPath) ||
                 !Verify(reservation.TemporaryPath, reservation.IsDirectory, receipt.Files, receipt.CreationTimeUtcTicks)) return null;
-            if (reservation.IsDirectory) Directory.Move(reservation.TemporaryPath, reservation.FinalPath);
-            else File.Move(reservation.TemporaryPath, reservation.FinalPath, overwrite: false);
+            OutputRecoveryService.Publish(reservation.TemporaryPath, reservation.FinalPath, reservation.IsDirectory);
             return reservation.FinalPath;
         }
     }
@@ -100,13 +98,16 @@ public sealed class OutputCommitReceiptStore
         {
             try
             {
-                if (finalPath is not null && File.Exists(PathFor(taskId)))
+                var path = PathFor(taskId);
+                if (!File.Exists(path)) return;
+                using var transaction = StoreTransaction.OpenReceiptAsync(path).GetAwaiter().GetResult();
+                if (finalPath is not null && File.Exists(path))
                 {
                     var receipt = JsonSerializer.Deserialize<Receipt>(File.ReadAllText(PathFor(taskId)));
                     if (receipt?.Reservation is not { } reservation ||
                         !string.Equals(reservation.FinalPath, finalPath, StringComparison.OrdinalIgnoreCase)) return;
                 }
-                File.Delete(PathFor(taskId));
+                transaction.DeleteAsync().GetAwaiter().GetResult();
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException) { SafeDiagnostics.Report(exception); }
         }
@@ -116,51 +117,22 @@ public sealed class OutputCommitReceiptStore
     {
         lock (_gate)
         {
-            Directory.CreateDirectory(_root);
-            var path = PathFor(receipt.Reservation.TaskId);
-            var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            try
-            {
-                using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                {
-                    JsonSerializer.Serialize(stream, receipt);
-                    stream.Flush(flushToDisk: true);
-                }
-                File.Move(temporary, path, overwrite: true);
-            }
-            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+            using var transaction = StoreTransaction.OpenReceiptAsync(PathFor(receipt.Reservation.TaskId)).GetAwaiter().GetResult();
+            transaction.PublishAsync(receipt, JsonSerializerOptions.Default, CancellationToken.None).GetAwaiter().GetResult();
         }
     }
 
     private string PathFor(Guid taskId) => Path.Combine(_root, taskId.ToString("N") + ".json");
     private static long CreationTime(string path, bool isDirectory) =>
         (isDirectory ? Directory.GetCreationTimeUtc(path) : File.GetCreationTimeUtc(path)).Ticks;
-    private static bool Verify(string path, bool isDirectory, IReadOnlyList<FileFingerprint> files, long creationTime)
+    private static bool Verify(string path, bool isDirectory, IReadOnlyList<OutputRecoveryFingerprint> files, long creationTime)
     {
         if (!(isDirectory ? Directory.Exists(path) : File.Exists(path))) return false;
         return CreationTime(path, isDirectory) == creationTime && files.SequenceEqual(Fingerprint(path, isDirectory));
     }
 
-    private static FileFingerprint[] Fingerprint(string root, bool isDirectory)
-    {
-        if ((File.GetAttributes(root) & FileAttributes.ReparsePoint) != 0)
-            throw new InvalidDataException("An output commit receipt cannot contain links.");
-        IEnumerable<string> paths = isDirectory
-            ? Directory.EnumerateFileSystemEntries(root, "*", new EnumerationOptions
-                { RecurseSubdirectories = true, AttributesToSkip = 0, IgnoreInaccessible = false }).Order(StringComparer.Ordinal)
-            : [root];
-        return paths.Select(path =>
-        {
-            var attributes = File.GetAttributes(path);
-            if ((attributes & FileAttributes.ReparsePoint) != 0)
-                throw new InvalidDataException("An output commit receipt cannot contain links.");
-            var directory = (attributes & FileAttributes.Directory) != 0;
-            if (directory) return new FileFingerprint(Path.GetRelativePath(root, path), true, 0, string.Empty);
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            return new FileFingerprint(isDirectory ? Path.GetRelativePath(root, path) : string.Empty,
-                false, stream.Length, Convert.ToHexString(SHA256.HashData(stream)));
-        }).ToArray();
-    }
+    private static OutputRecoveryFingerprint[] Fingerprint(string path, bool directory) =>
+        OutputRecoveryService.Fingerprint(path, directory, CancellationToken.None);
 
     private static Reservation CaptureReservation(MediaTask task, string finalPath, string temporaryPath, bool isDirectory) =>
         new(task.Id, task.TargetFormatId, task.ConversionMode, task.SelectedAudioTrack, task.EngineId,
@@ -174,12 +146,11 @@ public sealed class OutputCommitReceiptStore
     private sealed record Reservation(Guid TaskId, string TargetFormatId, string ConversionMode, int SelectedAudioTrack,
         string EngineId, string FinalPath, string TemporaryPath, bool IsDirectory, Guid? OutputGroupId,
         string OutputLabel, string MediaOptionsSignature);
-    private sealed record FileFingerprint(string Path, bool IsDirectory, long Length, string Sha256);
-    private sealed record Receipt(Reservation Reservation, FileFingerprint[] Files, long CreationTimeUtcTicks)
+    private sealed record Receipt(Reservation Reservation, OutputRecoveryFingerprint[] Files, long CreationTimeUtcTicks)
     {
         public string? CompanionTemporaryPath { get; init; }
         public string? CompanionFinalPath { get; init; }
-        public FileFingerprint[] CompanionFiles { get; init; } = [];
+        public OutputRecoveryFingerprint[] CompanionFiles { get; init; } = [];
         public long CompanionCreationTimeUtcTicks { get; init; }
     }
 }

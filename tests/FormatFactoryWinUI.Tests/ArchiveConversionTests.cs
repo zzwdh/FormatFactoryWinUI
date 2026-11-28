@@ -163,6 +163,7 @@ public sealed class ArchiveConversionTests
     [InlineData("folder/../../outside.txt")]
     [InlineData("folder/file.txt:stream")]
     [InlineData("CON.txt")]
+    [InlineData("COM¹.log")]
     public async Task UnsafeArchivePaths_AreRejectedBeforeExtraction(string name)
     {
         using var directory = new TemporaryDirectory();
@@ -243,6 +244,23 @@ public sealed class ArchiveConversionTests
     }
 
     [Fact]
+    public async Task OrdinallyDistinctUnicodeNames_SurviveStrictConversion()
+    {
+        using var directory = new TemporaryDirectory();
+        var source = Path.Combine(directory.Path, "names.zip");
+        using (var zip = ZipFile.Open(source, ZipArchiveMode.Create))
+        {
+            zip.CreateEntry("Straße.txt");
+            zip.CreateEntry("STRASSE.txt");
+        }
+        var output = await new ArchiveConversionService(Engine).ConvertAsync(source, directory.Path,
+            new(ArchiveFormat.Zip, true), NoPassword);
+        using var result = ZipFile.OpenRead(output);
+        Assert.NotNull(result.GetEntry("Straße.txt"));
+        Assert.NotNull(result.GetEntry("STRASSE.txt"));
+    }
+
+    [Fact]
     public async Task CancellationDuringCompression_RemovesScratchAndPreservesSource()
     {
         using var directory = new TemporaryDirectory();
@@ -259,6 +277,30 @@ public sealed class ArchiveConversionTests
                 new InlineProgress(sample => { if (sample.Phase == "compressing") cancellation.CancelAfter(50); }), cancellation.Token));
         Assert.True(File.Exists(source));
         Assert.Empty(Directory.EnumerateFileSystemEntries(output));
+    }
+
+    [Fact]
+    public async Task ScratchCleanup_RetriesWhileAnExtractedFileIsStillOpen()
+    {
+        if (!OperatingSystem.IsWindows()) throw SkipException.ForSkip("This test uses Windows file sharing.");
+        using var directory = new TemporaryDirectory();
+        var scratch = Path.Combine(directory.Path, ".ffarchive-" + Guid.NewGuid().ToString("N"));
+        var extracted = Directory.CreateDirectory(Path.Combine(scratch, "extracted"));
+        var source = Path.Combine(directory.Path, "original.zip");
+        File.WriteAllText(source, "preserve");
+
+        Task cleanup;
+        using (var held = new FileStream(Path.Combine(extracted.FullName, "held.bin"), FileMode.CreateNew,
+                   FileAccess.Write, FileShare.None))
+        {
+            cleanup = ArchiveConversionService.DeleteScratchAsync(scratch, directory.Path);
+            Assert.False(cleanup.IsCompleted);
+            Assert.True(Directory.Exists(scratch));
+        }
+
+        await cleanup;
+        Assert.False(Directory.Exists(scratch));
+        Assert.Equal("preserve", File.ReadAllText(source));
     }
 
     [Fact]

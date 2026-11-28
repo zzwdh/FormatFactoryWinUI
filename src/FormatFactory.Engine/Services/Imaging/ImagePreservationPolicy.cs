@@ -6,9 +6,12 @@ namespace FormatFactoryWinUI.Services;
 
 internal static class ImagePreservationPolicy
 {
-    public static ImageAnimationInfo? ValidateFfmpegInput(MediaTask task, CancellationToken token = default)
+    public static ImageAnimationInfo? ValidateFfmpegInput(MediaTask task, CancellationToken token = default) =>
+        ValidateFfmpegInputAsync(task, token).GetAwaiter().GetResult();
+
+    public static async Task<ImageAnimationInfo?> ValidateFfmpegInputAsync(MediaTask task, CancellationToken token = default)
     {
-        try { return ValidateFfmpegInputCore(task, token); }
+        try { return await ValidateFfmpegInputCoreAsync(task, token).ConfigureAwait(false); }
         catch (OperationCanceledException) { throw; }
         catch (Exception error)
         {
@@ -18,18 +21,18 @@ internal static class ImagePreservationPolicy
         }
     }
 
-    private static ImageAnimationInfo? ValidateFfmpegInputCore(MediaTask task, CancellationToken token)
+    private static async Task<ImageAnimationInfo?> ValidateFfmpegInputCoreAsync(MediaTask task, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         if (task.ConversionMode == "lossless" &&
             (FormatCatalog.IsVideoCodec(task.TargetFormatId) || FormatCatalog.IsFrameSequence(task.TargetFormatId)))
             throw Failure(task, new NotSupportedException(LocalizationService.T("ConversionUiLosslessRouteUnsupported")), FormatFailureReason.UnsupportedRoute);
         if (task.Kind != MediaKind.Image) return null;
-        var actualPages = File.Exists(task.InputPath) ? TiffPageCountReader.Read(task.InputPath, token) : null;
+        var actualPages = File.Exists(task.InputPath) ? await TiffPageCountReader.ReadAsync(task.InputPath, token).ConfigureAwait(false) : null;
         var animation = Path.GetExtension(task.InputPath).Equals(".gif", StringComparison.OrdinalIgnoreCase)
-            ? ImageAnimationInfoReader.Read(task.InputPath, token) : null;
+            ? await ImageAnimationInfoReader.ReadAsync(task.InputPath, false, token).ConfigureAwait(false) : null;
         var animated = animation?.IsAnimated == true || task.Probe.IsAnimated ||
-            File.Exists(task.InputPath) && ImageAnimationDetector.HasAnimation(task.InputPath);
+            File.Exists(task.InputPath) && await ImageAnimationDetector.HasAnimationAsync(task.InputPath, token).ConfigureAwait(false);
         if ((actualPages > 1 || task.Probe.PageCount > 1 || task.SourceFormatId == "tiff" && task.Probe.PageCount == 0 && actualPages is null) && !animated)
             throw FormatFailureDiagnostics.Attach(new NotSupportedException(LocalizationService.T("NativeImageMultiplePages")),
                 FormatFailureDiagnostics.Image(task, FormatFailureStage.ImagePolicy, FormatFailureReason.MultiplePages) with { Pages = actualPages ?? task.Probe.PageCount });

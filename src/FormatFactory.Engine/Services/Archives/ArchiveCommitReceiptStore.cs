@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FormatFactoryWinUI.Models;
@@ -49,22 +48,8 @@ public sealed class ArchiveCommitReceiptStore : IArchiveCommitReceiptStore
         await _gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
-            Directory.CreateDirectory(_root);
-            var path = PathFor(task.Id);
-            var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            try
-            {
-                await using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write,
-                    FileShare.None, 4096, FileOptions.Asynchronous | FileOptions.WriteThrough))
-                {
-                    await JsonSerializer.SerializeAsync(stream, receipt, JsonOptions, token).ConfigureAwait(false);
-                    await stream.FlushAsync(token).ConfigureAwait(false);
-                    stream.Flush(flushToDisk: true);
-                }
-                token.ThrowIfCancellationRequested();
-                File.Move(temporary, path, overwrite: true);
-            }
-            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+            using var transaction = await StoreTransaction.OpenReceiptAsync(PathFor(task.Id), token).ConfigureAwait(false);
+            await transaction.PublishAsync(receipt, JsonOptions, token).ConfigureAwait(false);
         }
         finally { _gate.Release(); }
     }
@@ -113,7 +98,13 @@ public sealed class ArchiveCommitReceiptStore : IArchiveCommitReceiptStore
     {
         if (taskId == Guid.Empty) return;
         await _gate.WaitAsync(token).ConfigureAwait(false);
-        try { File.Delete(PathFor(taskId)); }
+        try
+        {
+            var path = PathFor(taskId);
+            if (!File.Exists(path)) return;
+            using var transaction = await StoreTransaction.OpenReceiptAsync(path, token).ConfigureAwait(false);
+            await transaction.DeleteAsync(token).ConfigureAwait(false);
+        }
         finally { _gate.Release(); }
     }
 
@@ -134,14 +125,16 @@ public sealed class ArchiveCommitReceiptStore : IArchiveCommitReceiptStore
         var attributes = File.GetAttributes(path);
         if ((attributes & (FileAttributes.ReparsePoint | FileAttributes.Directory)) != 0)
             throw new InvalidDataException("Archive publication receipts do not accept links or directories.");
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
-            81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        var creation = File.GetCreationTimeUtc(path).Ticks;
-        var length = stream.Length;
-        var hash = Convert.ToHexString(await SHA256.HashDataAsync(stream, token).ConfigureAwait(false));
-        if (stream.Length != length || File.GetCreationTimeUtc(path).Ticks != creation)
+        // Keep the exact file pinned against replacement or modification while the
+        // native worker reads it. Existing receipts include the Win32 creation time.
+        using var handle = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var creation = File.GetCreationTimeUtc(handle).Ticks;
+        var length = RandomAccess.GetLength(handle);
+        var files = await OutputRecoveryService.FingerprintAsync(path, isDirectory: false, token).ConfigureAwait(false);
+        if (files is not [{ IsDirectory: false, Path.Length: 0 } entry] || entry.Length != length ||
+            RandomAccess.GetLength(handle) != length || File.GetCreationTimeUtc(handle).Ticks != creation)
             throw new InvalidDataException("The archive changed while preparing its publication receipt.");
-        return new(length, creation, hash);
+        return new(length, creation, entry.Sha256);
     }
 
     private sealed record Fingerprint(long Length, long CreationTimeUtcTicks, string Sha256);

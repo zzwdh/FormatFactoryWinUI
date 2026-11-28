@@ -92,6 +92,7 @@ internal sealed class ProcessThreadSuspension : IDisposable
         public uint ThreadId;
         public uint OwnerProcessId;
         public int BasePriority;
+        public int DeltaPriority;
         public uint Flags;
     }
 

@@ -388,7 +388,7 @@ Test-Case 'Formal entrypoint refuses missing evidence and leaves no upload' {
     Reject { & (Join-Path $repo 'packaging/build-store-msix.ps1') -OutputDirectory $out -SkipRepositoryValidation }
     if (@(Get-ChildItem -LiteralPath $taskRoot -Filter '*.msixupload' -Recurse -ErrorAction SilentlyContinue).Count -ne 0) { throw 'Refused gate generated an upload.' }
 }
-Test-Case 'Package validator rejects a same-length replacement of the tested native DLL' {
+Test-Case 'Package validator checks Shell integrity and conversion worker presence and architecture' {
     . (Join-Path $repo 'build/RepositoryMetadata.ps1')
     . (Join-Path $repo 'packaging/ApplicationManifest.ps1')
     Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -396,25 +396,42 @@ Test-Case 'Package validator rejects a same-length replacement of the tested nat
     $manifestText = New-FormatFactoryAppxManifest -TemplatePath (Join-Path $repo 'packaging/AppxManifest.xml.template') -InputExtensions @(Get-RepositoryInputExtensions -RepositoryRoot $repo) -Config $config -Version $candidate.version -Architecture x64
     $pe = [byte[]]::new(128); $pe[0]=77; $pe[1]=90; $pe[0x3c]=0x40; $pe[0x40]=80; $pe[0x41]=69; $pe[0x44]=0x64; $pe[0x45]=0x86
     $nativeHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($pe))
-    $nativeReceipt = [ordered]@{architecture='x64';configuration='Release';dllBytes=$pe.Length;dllSha256=$nativeHash;formatCount=56;minizVerified=$true;testsExecuted=$true}
-    $names = @('FormatFactoryWinUI.exe','FormatFactory.Core.dll','FormatFactory.Engine.dll','FormatFactory.Documents.dll','FormatFactory.Presentation.dll','FormatFactory.FilterWorker.exe','FormatFactory.FilterWorker.dll','FormatFactory.FilterWorker.deps.json','FormatFactory.FilterWorker.runtimeconfig.json','FormatFactoryWinUI.pri','App.xbf','MainWindow.xbf','Views/HistoryView.xbf','Views/SettingsView.xbf','Views/QueueView.xbf','Views/ArchiveConversionView.xbf','Views/PageResources.xbf','Engines/bundle-manifest.json','FormatFactoryShellExtension.Native.dll','native-shell-build.json','miniz.LICENSE.txt','AppxManifest.xml')
-    foreach ($corrupt in @($false,$true)) {
-        $path = Join-Path $taskRoot "synthetic-native-$corrupt.msix"
+    $nativeReceipt = [ordered]@{architecture='x64';configuration='Release';dllBytes=$pe.Length;dllSha256=$nativeHash;formatCount=56;epubParser='rust';rustLockSha256=(Get-FileHash -LiteralPath (Join-Path $repo 'src/FormatFactoryShellExtension.Native/rust/Cargo.lock')).Hash;rustVersion=(Get-ToolchainLock -RepositoryRoot $repo).rustVersion;testsExecuted=$true}
+    $names = @('FormatFactoryWinUI.exe','FormatFactory.Core.dll','FormatFactory.Engine.dll','FormatFactory.Documents.dll','FormatFactory.Presentation.dll','FormatFactory.FilterWorker.exe','FormatFactory.FilterWorker.dll','FormatFactory.FilterWorker.deps.json','FormatFactory.FilterWorker.runtimeconfig.json','FormatFactoryWinUI.pri','App.xbf','MainWindow.xbf','Views/HistoryView.xbf','Views/SettingsView.xbf','Views/QueueView.xbf','Views/ArchiveConversionView.xbf','Views/PageResources.xbf','Engines/bundle-manifest.json','FormatFactoryShellExtension.Native.dll','native-shell-build.json','FormatFactoryShellExtension.Native.licenses.zip','AppxManifest.xml')
+    $names += 'FormatFactory.ConversionWorker.exe','FormatFactory.ConversionWorker.licenses.zip'
+    $licenseFile = Join-Path $taskRoot 'synthetic-worker-licenses.zip'
+    $licenses = [IO.Compression.ZipFile]::Open($licenseFile,[IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($name in @('rust-standard-library/COPYRIGHT-library.html','rust-standard-library/licenses/Apache-2.0.txt',
+            'rust-standard-library/licenses/MIT.txt','crates/flate2-test/LICENSE-MIT','crates/crc32fast-test/LICENSE-MIT')) {
+            $stream = $licenses.CreateEntry($name).Open()
+            try { $stream.WriteByte(1) } finally { $stream.Dispose() }
+        }
+    } finally { $licenses.Dispose() }
+    foreach ($fixture in @('valid','shell-hash','worker-architecture','worker-missing','worker-notices','shell-notices')) {
+        $path = Join-Path $taskRoot "synthetic-native-$fixture.msix"
         $archive = [IO.Compression.ZipFile]::Open($path,[IO.Compression.ZipArchiveMode]::Create)
         try {
             foreach ($name in $names) {
+                if ($fixture -eq 'worker-missing' -and $name -eq 'FormatFactory.ConversionWorker.exe') { continue }
                 $entry = $archive.CreateEntry($name)
                 $stream = $entry.Open()
                 try {
                     $payload = [Text.Encoding]::UTF8.GetBytes('SYNTHETIC payload, never install')
-                    if ($name -in @('FormatFactoryWinUI.exe','FormatFactory.FilterWorker.exe','FormatFactoryShellExtension.Native.dll')) { $payload=$pe.Clone(); if ($corrupt -and $name -eq 'FormatFactoryShellExtension.Native.dll') { $payload[100]=1 } }
+                    if ($name -in @('FormatFactoryWinUI.exe','FormatFactory.FilterWorker.exe','FormatFactory.ConversionWorker.exe','FormatFactoryShellExtension.Native.dll')) {
+                        $payload = $pe.Clone()
+                        if ($fixture -eq 'shell-hash' -and $name -eq 'FormatFactoryShellExtension.Native.dll') { $payload[100]=1 }
+                        if ($fixture -eq 'worker-architecture' -and $name -eq 'FormatFactory.ConversionWorker.exe') { $payload[0x44]=0x64; $payload[0x45]=0xAA }
+                    }
+                    elseif ($name -eq 'FormatFactory.ConversionWorker.licenses.zip' -and $fixture -ne 'worker-notices') { $payload=[IO.File]::ReadAllBytes($licenseFile) }
+                    elseif ($name -eq 'FormatFactoryShellExtension.Native.licenses.zip' -and $fixture -ne 'shell-notices') { $payload=[IO.File]::ReadAllBytes($licenseFile) }
                     elseif ($name -eq 'native-shell-build.json') { $payload=[Text.Encoding]::UTF8.GetBytes(($nativeReceipt | ConvertTo-Json)) }
                     elseif ($name -eq 'AppxManifest.xml') { $payload=[Text.Encoding]::UTF8.GetBytes($manifestText) }
                     $stream.Write($payload,0,$payload.Length)
                 } finally { $stream.Dispose() }
             }
         } finally { $archive.Dispose() }
-        if ($corrupt) { Reject { & (Join-Path $repo 'packaging/validate-msix.ps1') -PackagePath $path -Architecture x64 } }
+        if ($fixture -ne 'valid') { Reject { & (Join-Path $repo 'packaging/validate-msix.ps1') -PackagePath $path -Architecture x64 } }
         else { & (Join-Path $repo 'packaging/validate-msix.ps1') -PackagePath $path -Architecture x64 | Out-Null }
     }
 }

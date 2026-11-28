@@ -13,6 +13,14 @@ public sealed record NormalizedSection(
     string? Id,
     IReadOnlyList<NormalizedBlock> Blocks);
 
+[System.Text.Json.Serialization.JsonPolymorphic(TypeDiscriminatorPropertyName = "Kind")]
+[System.Text.Json.Serialization.JsonDerivedType(typeof(NormalizedHeading), "Heading")]
+[System.Text.Json.Serialization.JsonDerivedType(typeof(NormalizedParagraph), "Paragraph")]
+[System.Text.Json.Serialization.JsonDerivedType(typeof(NormalizedList), "List")]
+[System.Text.Json.Serialization.JsonDerivedType(typeof(NormalizedTable), "Table")]
+[System.Text.Json.Serialization.JsonDerivedType(typeof(NormalizedImage), "Image")]
+[System.Text.Json.Serialization.JsonDerivedType(typeof(NormalizedPageBreak), "PageBreak")]
+[System.Text.Json.Serialization.JsonDerivedType(typeof(NormalizedFootnote), "Footnote")]
 public abstract record NormalizedBlock;
 
 public sealed record NormalizedHeading(int Level, string Text) : NormalizedBlock;

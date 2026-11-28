@@ -3,6 +3,7 @@
   "msvcDirectoryVersion": "14.44.35207",
   "compilerFileVersion": "19.44.35229.0",
   "linkerFileVersion": "14.44.35229.0",
+  "rustVersion": "1.90.0",
   "windowsSdkVersion": "10.0.28000.0",
   "sdkToolFileVersion": "10.0.28000.2526",
   "dotnetSdkVersion": "11.0.100",

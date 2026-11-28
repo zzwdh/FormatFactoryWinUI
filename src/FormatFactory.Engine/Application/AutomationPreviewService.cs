@@ -42,24 +42,19 @@ public static class AutomationPreviewService
         {
             if (!Directory.Exists(rule.FolderPath))
                 return new(items, false, LocalizationService.T("AutomationPreviewFolderUnavailable"));
-            var enumeration = new EnumerationOptions
-            {
-                RecurseSubdirectories = rule.IncludeSubfolders, IgnoreInaccessible = false,
-                AttributesToSkip = FileAttributes.ReparsePoint, ReturnSpecialDirectories = false
-            };
-            foreach (var input in Directory.EnumerateFiles(rule.FolderPath, "*", enumeration))
+            foreach (var entry in FolderDiscovery.Enumerate(rule.FolderPath, rule.IncludeSubfolders, false, false, token))
             {
                 token.ThrowIfCancellationRequested();
                 if (items.Count >= limit) return new(items, true);
-                var path = Path.GetFullPath(input);
-                var fingerprint = FileFingerprintService.Read(path);
+                var path = Path.GetFullPath(entry.Path);
+                var fingerprint = entry.Fingerprint;
                 var state = AutomationPreviewState.Ready;
                 var reason = LocalizationService.T("AutomationPreviewReady");
                 string? output = null;
                 if (!rule.Enabled) Set(AutomationPreviewState.Disabled, "AutomationPreviewDisabled");
                 else if (AutomationRuleMatcher.IsExcludedByDestinations(path, rules) || records.Any(record =>
                     (record.OutputPath is { } result && (Same(path, result) &&
-                        FileFingerprintService.Read(path) == record.OutputFingerprint || Directory.Exists(result) && Within(path, result))) ||
+                        fingerprint == record.OutputFingerprint || Directory.Exists(result) && Within(path, result))) ||
                     record.Outputs?.Any(receipt => Same(path, receipt.OutputPath) && fingerprint == receipt.Fingerprint ||
                         Directory.Exists(receipt.OutputPath) && Within(path, receipt.OutputPath)) == true ||
                     record.ArchivedPath is { } archive && Same(path, archive) && fingerprint == record.Fingerprint))

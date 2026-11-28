@@ -154,6 +154,8 @@ public sealed partial class SettingsView : UserControl
         RateAppTitleText.Text = LocalizationService.T("SettingsActionsRateTitle");
         RateAppDescriptionText.Text = LocalizationService.T("SettingsActionsRateDescription");
         RateAppButton.Content = LocalizationService.T("SettingsActionsRateButton");
+        ProjectHomeLink.Content = LocalizationService.T("SettingsActionsProjectHome");
+        SubmitIssueLink.Content = LocalizationService.T("SettingsActionsSubmitIssue");
         ApplyFeedbackLocalization();
         ApplyTelemetryLocalization();
         ApplyUpdateLocalization();

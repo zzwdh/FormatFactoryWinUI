@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using FormatFactoryWinUI.Models;
 using FormatFactoryWinUI.Services;
 
@@ -24,6 +25,7 @@ internal static class TestHelperProgram
             "echo" => Echo(args),
             "wait" => await WaitForeverAsync(),
             "progress-and-wait" => await ProgressAndWaitAsync(args),
+            "pause-probe" => PauseProbe(args),
             "spawn-and-wait" => await SpawnChildAsync(args, waitForChild: true),
             "spawn-and-exit" => await SpawnChildAsync(args, waitForChild: false),
             "settings-writer" => await RunSettingsWriterAsync(args),
@@ -134,6 +136,21 @@ internal static class TestHelperProgram
         await Console.Out.FlushAsync();
         return await WaitForeverAsync();
     }
+
+    private static int PauseProbe(string[] args)
+    {
+        if (!OperatingSystem.IsWindows() || args.Length != 3) return 2;
+        using var release = EventWaitHandle.OpenExisting(args[2]);
+        File.WriteAllText(args[1], $"{Environment.ProcessId} {GetCurrentThreadId()}");
+        Console.WriteLine("out_time_us=1");
+        Console.WriteLine("progress=continue");
+        Console.Out.Flush();
+        return release.WaitOne(TimeSpan.FromSeconds(30)) ? 0 : 1;
+    }
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
     private static async Task<int> WaitForeverAsync()
     {
         await Task.Delay(Timeout.InfiniteTimeSpan);

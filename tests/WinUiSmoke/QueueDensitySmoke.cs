@@ -66,6 +66,8 @@ public partial class App
                 var format = DensityControl<ComboBox>(queue, row, "TaskOutputFormatCombo");
                 Require(IsVisibleWithin(format, host) && format.IsEnabled && !row.IsDetailsExpanded,
                     "The output format was hidden or unavailable before opening details.");
+                Require(!FindDescendants<TextBlock>(format).Any(label => label.Text == row.ToString()),
+                    "The output format selector displayed the task view-model type as its header.");
                 format.SelectedItem = row.AvailableFormats.Single(value => value == "MKV");
                 Require(row.Model.TargetFormatId == "mkv" && !row.IsDetailsExpanded,
                     "The direct output format selector did not edit the model with details closed.");
@@ -101,8 +103,8 @@ public partial class App
                 Require(DensityControl<StackPanel>(queue, row, "TaskDetailsEditor").Visibility == Visibility.Collapsed &&
                     IsVisibleWithin(DensityControl<StackPanel>(queue, row, "TaskReadOnlyDetails"), host),
                     "Running work still exposed editable parameters or lost its read-only media information.");
-                Require(FindDescendants<ComboBox>(DensityControl<StackPanel>(queue, row, "TaskDetailsEditor")).All(control => !control.IsEnabled),
-                    "A running task retained an enabled parameter selector.");
+                Require(!FindDescendants<ComboBox>(DensityControl<StackPanel>(queue, row, "TaskDetailsEditor")).Any(),
+                    "A running task retained its parameter selectors.");
                 var format = DensityControl<ComboBox>(queue, row, "TaskOutputFormatCombo");
                 Require(IsVisibleWithin(format, host) && !format.IsEnabled && Equals(format.SelectedItem, "MKV"),
                     "Running work did not retain its selected format in a visible read-only control.");
@@ -137,6 +139,52 @@ public partial class App
                 Require(row.UseCompatibleAudioTrack && !row.IsDetailsExpanded && IsVisibleWithin(warning, host) &&
                     warning.Text == row.CompatibleAudioTrackWarning,
                     "Collapsing details concealed the warning for an explicitly selected compatible audio track.");
+            });
+
+            await CheckAsync("Virtualized task editors restore per-task presets and accept edits after scrolling", async () =>
+            {
+                while (rows.Count < 64)
+                    rows.Add(new MediaTaskViewModel(QueueExperienceModel($"recycled-{rows.Count}.mp4")));
+                var edited = rows[20];
+                var other = rows[52];
+                var otherMode = other.ConversionMode;
+                await ScrollTo(edited);
+                edited.IsDetailsExpanded = true;
+                await YieldLayoutAsync();
+                host.UpdateLayout();
+                PresetFor(edited).SelectedValue = "quality";
+                await YieldLayoutAsync();
+                host.UpdateLayout();
+                Require(edited.ConversionMode == "quality", "The realized preset did not update its task.");
+
+                await ScrollTo(other);
+                Require(queue.TaskList.ContainerFromItem(edited) is null,
+                    "The first editor never left the realized container range.");
+                var otherEditor = DensityControl<StackPanel>(queue, other, "TaskDetailsEditor");
+                Require(!other.IsDetailsExpanded && !FindDescendants<ComboBox>(otherEditor).Any() && other.ConversionMode == otherMode,
+                    "Another task inherited the recycled editor or its preset.");
+                await ScrollTo(edited);
+                var preset = PresetFor(edited);
+                Require(preset.IsEnabled && Equals(preset.SelectedValue, "quality"),
+                    "The re-realized editor lost its task's preset.");
+                preset.SelectedValue = "balanced";
+                await YieldLayoutAsync();
+                host.UpdateLayout();
+                Require(edited.ConversionMode == "balanced" && other.ConversionMode == otherMode,
+                    "An edit after recycling reached the wrong task.");
+
+                ComboBox PresetFor(MediaTaskViewModel task) =>
+                    FindDescendants<ComboBox>(DensityRow(queue, task)).Single(combo => ReferenceEquals(combo.ItemsSource, task.ModeOptions));
+
+                async Task ScrollTo(MediaTaskViewModel task)
+                {
+                    queue.TaskList.ScrollIntoView(task, ScrollIntoViewAlignment.Leading);
+                    var timeout = DateTimeOffset.UtcNow.AddSeconds(5);
+                    while (queue.TaskList.ContainerFromItem(task) is null && DateTimeOffset.UtcNow < timeout)
+                        await Task.Delay(25);
+                    await YieldLayoutAsync();
+                    host.UpdateLayout();
+                }
             });
 
             await CheckAsync("Compact command flyouts retain working output and queue controls", async () =>

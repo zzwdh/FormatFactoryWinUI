@@ -2,9 +2,10 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.IO.Compression;
+using FormatFactoryWinUI.Disc;
 using FormatFactoryWinUI.Services;
 
-namespace FormatFactoryWinUI.Disc;
+namespace FormatFactoryWinUI.Tests;
 
 internal static class CsoImageCodec
 {
@@ -121,7 +122,7 @@ internal static class CsoImageCodec
     {
         if (!input.CanRead || !input.CanSeek)
         {
-            throw new ArgumentException(LocalizationService.T("ConversionUiCsoInputReadableSeekable"), nameof(input));
+            throw new ArgumentException("The reference decoder needs a readable, seekable CSO stream.", nameof(input));
         }
 
         input.Position = 0;
@@ -263,7 +264,7 @@ internal static class CsoImageCodec
         ArgumentNullException.ThrowIfNull(output);
         if (!output.CanWrite)
         {
-            throw new ArgumentException(LocalizationService.T("ConversionUiIsoOutputWritable"), nameof(output));
+            throw new ArgumentException("The reference decoder needs a writable ISO stream.", nameof(output));
         }
 
         progress?.Report(new DiscImageConversionProgress(0, layout.TotalBytes, 0, layout.BlockCount));
@@ -497,7 +498,7 @@ internal static class CsoImageCodec
         var unit = 1L << alignment;
         if (offset < 0 || offset % unit != 0)
         {
-            throw new InvalidDataException(LocalizationService.T("ConversionUiCsoBlockOffsetNotAligned"));
+            throw new InvalidDataException("Unaligned block offset in the reference encoder.");
         }
 
         var encoded = offset / unit;
@@ -514,7 +515,7 @@ internal static class CsoImageCodec
         var offset = (ulong)(entry & OffsetMask) << alignment;
         if (offset > long.MaxValue)
         {
-            throw new InvalidDataException(LocalizationService.T("ConversionUiCsoBlockOffsetExceedsSupportedSize"));
+            throw new InvalidDataException("Block offset exceeds the reference decoder's maximum file size.");
         }
 
         return checked((long)offset);
@@ -526,7 +527,7 @@ internal static class CsoImageCodec
     private static long RoundUp(long value, long unit) =>
         checked(((value + unit - 1L) / unit) * unit);
 
-    private static void ValidateBlockSize(int blockSize)
+    internal static void ValidateBlockSize(int blockSize)
     {
         if (blockSize < 512 || blockSize > MaximumBlockSize || !IsPowerOfTwo(blockSize))
         {

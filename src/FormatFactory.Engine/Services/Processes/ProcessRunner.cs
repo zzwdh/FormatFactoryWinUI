@@ -16,6 +16,7 @@ internal sealed record ProcessRunOptions
     public int MaximumErrorBytes { get; init; } = BoundedProcessOutput.TailBytes;
     public string? LogPath { get; init; }
     public string? StandardInput { get; init; }
+    public bool UseConversionWorker { get; init; }
 }
 
 internal static class ProcessRunner
@@ -24,11 +25,12 @@ internal static class ProcessRunner
         TimeSpan timeout, CancellationToken cancellationToken = default) =>
         RunAsync(executable, arguments, timeout, new ProcessRunOptions(), cancellationToken);
 
-    public static Task<ProcessExecutionResult> RunLoggedAsync(string executable, IEnumerable<string> arguments,
+    public static Task<ProcessExecutionResult> RunConverterLoggedAsync(string executable, IEnumerable<string> arguments,
         TimeSpan timeout, CancellationToken cancellationToken = default) =>
         RunAsync(executable, arguments, timeout, new ProcessRunOptions
         {
             CaptureCompleteOutput = false,
+            UseConversionWorker = true,
             MaximumOutputBytes = BoundedProcessOutput.TailBytes,
             LogPath = LogService.CreateTaskLogPath(Guid.NewGuid())
         }, cancellationToken);
@@ -39,7 +41,7 @@ internal static class ProcessRunner
         ArgumentException.ThrowIfNullOrWhiteSpace(executable);
         ArgumentNullException.ThrowIfNull(arguments);
         ArgumentNullException.ThrowIfNull(options);
-        if (timeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(timeout),
+        if (timeout <= TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan) throw new ArgumentOutOfRangeException(nameof(timeout),
             LocalizationService.T("GeneralServiceTimeoutPositive"));
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaximumOutputBytes);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.MaximumErrorBytes);
@@ -60,8 +62,23 @@ internal static class ProcessRunner
 
         var observation = Guid.NewGuid();
         var started = Stopwatch.GetTimestamp();
+        IDisposable owner;
         ExternalProcessLifetime lifetime;
-        try { lifetime = ExternalProcessLifetime.Start(startInfo, cancellationToken); }
+        try
+        {
+            if (options.UseConversionWorker)
+            {
+                var launch = await ConversionWorkerLaunch.StartAsync(executable, startInfo.ArgumentList,
+                    null, cancellationToken, redirectStandardInput: options.StandardInput is not null).ConfigureAwait(false);
+                owner = launch;
+                lifetime = launch.Lifetime;
+            }
+            else
+            {
+                lifetime = ExternalProcessLifetime.Start(startInfo, cancellationToken);
+                owner = lifetime;
+            }
+        }
         catch (Exception error) when (error is not OperationCanceledException)
         {
             RuntimeFailureDiagnostics.Record(error, new(RuntimeFailureStage.ProcessStart, observation, 1,
@@ -70,7 +87,7 @@ internal static class ProcessRunner
                 (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds, null, error);
             throw;
         }
-        using var processLifetime = lifetime;
+        using var processLifetime = owner;
         var process = lifetime.Process;
         var outputTask = BoundedProcessOutput.ReadAsync(process.StandardOutput.BaseStream, "stdout",
             options.MaximumOutputBytes, options.CaptureCompleteOutput, options.LogPath);

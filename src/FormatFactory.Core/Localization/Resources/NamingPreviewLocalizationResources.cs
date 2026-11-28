@@ -16,3 +16,4 @@ internal static class NamingPreviewLocalizationResources
         new("NamingPreviewUnavailable", ["Path preview unavailable. Check the output folder.", "无法预览路径，请检查输出文件夹。", "無法預覽路徑，請檢查輸出資料夾。", "パスを表示できません。出力フォルダーを確認してください。", "경로를 표시할 수 없습니다. 출력 폴더를 확인하세요.", "Ruta no disponible. Compruebe la carpeta de salida.", "Chemin indisponible. Vérifiez le dossier de sortie.", "Pfadvorschau nicht verfügbar. Prüfen Sie den Ausgabeordner.", "Caminho indisponível. Verifique a pasta de saída.", "Путь недоступен. Проверьте выходную папку.", "Percorso non disponibile. Controlla la cartella di output.", "Padvoorbeeld niet beschikbaar. Controleer de uitvoermap.", "Podgląd niedostępny. Sprawdź folder wyjściowy.", "Yol önizlemesi yok. Çıktı klasörünü kontrol edin.", "معاينة المسار غير متاحة. تحقّق من مجلد الإخراج."])
     ]);
 }
+

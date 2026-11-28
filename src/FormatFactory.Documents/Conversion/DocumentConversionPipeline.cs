@@ -65,10 +65,8 @@ internal sealed class DocumentConversionPipeline : IConversionEngine
             ApplicationServices.DocumentPreservationPolicy.Validate(request);
             diagnosticStage = FormatFailureStage.DocumentConvert;
             var tools = await _discoverTools(cancellationToken);
-            var plan = _planner.Plan(request, tools);
-            var inputFormats = request.Inputs.Select(input => Normalize(input.FormatId)).Distinct(StringComparer.Ordinal).ToList();
-            var sourceFormat = inputFormats.Count == 1 ? inputFormats[0] : "image";
-            var targetFormat = request.TargetFormatId.Trim().TrimStart('.').ToLowerInvariant();
+            var plan = await _planner.PlanAsync(request, tools, cancellationToken);
+            var targetFormat = plan.Steps[^1].TargetFormatId;
             var outputTask = ApplicationServices.ConversionRequestFactory.CreateMediaTask(request, EngineId);
             var outputSettings = ApplicationServices.ConversionRequestFactory.OutputSettings(
                 new AppSettings { OutputMode = "source" }, request);
@@ -83,7 +81,7 @@ internal sealed class DocumentConversionPipeline : IConversionEngine
 
             using var workspace = new PipelineWorkspace();
             using var workspaceBudget = DiskSpaceBudgetService.Shared.Reserve(outputTask, workspace.Path, workspace.Path);
-            await ExecuteAsync(sourceFormat, targetFormat, request, tools, outputPath, workspace, progress, cancellationToken);
+            await ExecuteAsync(plan, tools, outputPath, workspace, progress, cancellationToken);
             // The Markdown writer has already committed the document and its
             // resources together. A cancellation arriving afterwards cannot
             // turn that committed output into a cancelled result.
@@ -142,230 +140,150 @@ internal sealed class DocumentConversionPipeline : IConversionEngine
         }
     }
 
-    private async Task ExecuteAsync(
-        string source,
-        string target,
-        ConversionRequest request,
-        IReadOnlyList<ExternalToolInfo> tools,
-        string outputPath,
-        PipelineWorkspace workspace,
-        IProgress<ConversionExecutionProgress>? progress,
-        CancellationToken token)
+    private async Task ExecuteAsync(ConversionPlan plan, IReadOnlyList<ExternalToolInfo> tools, string outputPath,
+        PipelineWorkspace workspace, IProgress<ConversionExecutionProgress>? progress, CancellationToken token)
     {
+        var request = plan.Request;
+        var steps = plan.Steps;
         var inputs = request.Inputs.Select(item => Path.GetFullPath(item.Path)).ToList();
-        var input = inputs[0];
+        var source = inputs[0];
+        var target = steps[^1].TargetFormatId;
+        var first = steps[0];
         var language = Option(request, "ocrLanguage") ?? Option(request, "language");
-        var password = Option(request, "password");
+        var password = first.SourceFormatId == "pdf" ? Option(request, "password") : null;
         var fixedLayout = DocumentConversionOptions.IsFixedLayout(request);
-
-        if (source == "pdf" && target is "pdf" or "docx" or "txt" or "md" or "epub" or "mobi" or "azw3")
+        if (first.EngineId is ExternalEngineIds.Word or ExternalEngineIds.LibreOffice &&
+            steps.Count > 1 && steps[1].EngineId == DocumentEngineIds.PdfRenderer)
         {
-            await ConvertPdfBuiltInAsync(input, target, outputPath, language, password, fixedLayout, tools, workspace, progress, token);
+            Report(10, "office-layout", "DocumentCompatibilityFixedEpub");
+            await _officeFixedLayoutEpub.ConvertAsync(source, outputPath, workspace.Path, language, Option(request, "title"),
+                (input, pdf, cancellation) => ConvertOfficeToPdfAsync(first.EngineId, input, pdf, tools, progress, cancellation),
+                (pdf, cancellation) => _renderPdfPages(pdf, recognizeText: false, language, password: null,
+                    workspace.Path, cancellationToken: cancellation), progress, token);
             return;
         }
 
-        if ((source == "image" || DocumentConversionRoutePlanner.IsImageFormat(source)) &&
-            target is "pdf" or "txt" or "md" or "epub" or "mobi" or "azw3")
+        var currentPath = source;
+        NormalizedDocument? document = null;
+        IAsyncEnumerable<DecodedImagePage>? pages = null;
+        var legacyImport = first.EngineId == ExternalEngineIds.LibreOffice && first.TargetFormatId == "docx";
+        try { await RunStepsAsync(0); }
+        catch when (legacyImport && !token.IsCancellationRequested && _windowsFilterTextExtractor.IsAvailable(source))
         {
-            progress?.Report(new ConversionExecutionProgress(15, "image-decode", LocalizationService.T("ConversionUiDecodingImagePages")));
-            var pages = _decodeImagePages(inputs, target != "pdf", language,
-                workspace.Path, includeImageContent: target != "txt", cancellationToken: token);
-            if (target == "pdf")
+            Report(30, "windows-ifilter", "ConversionUiLibreOfficeFailedUsingIFilter");
+            document = await ReadFilterAsync();
+            // Replace the failed LibreOffice -> DOCX reader prefix with the native
+            // fallback. The remaining writer/Calibre steps are exactly the same plan.
+            await RunStepsAsync(2);
+        }
+
+        async Task RunStepsAsync(int start)
+        {
+            for (var i = start; i < steps.Count; i++)
             {
-                progress?.Report(new ConversionExecutionProgress(65, "image-pdf", LocalizationService.T("ConversionUiMergingImagePages")));
-                await _imagePdfWriter.WriteAsync(pages, outputPath, token);
-                return;
-            }
-
-            var title = Option(request, "title") ?? Path.GetFileNameWithoutExtension(input);
-            var document = await _imageDocumentBuilder.BuildAsync(pages, title, language ?? "zh-CN", fixedLayout, token);
-            await WriteNormalizedAsync(document, target, outputPath, tools, workspace, progress, fixedLayout, token);
-            return;
-        }
-
-        if (source == "docx" && target == "epub" && fixedLayout)
-        {
-            progress?.Report(new ConversionExecutionProgress(10, "office-layout",
-                LocalizationService.T("DocumentCompatibilityFixedEpub")));
-            await _officeFixedLayoutEpub.ConvertAsync(input, outputPath, workspace.Path, language,
-                Option(request, "title"),
-                (sourcePath, pdfPath, cancellation) => ConvertOfficeToPdfAsync(sourcePath, pdfPath, tools, progress, cancellation),
-                (pdfPath, cancellation) => _renderPdfPages(pdfPath,
-                    recognizeText: false, language, password: null, workspace.Path, cancellationToken: cancellation),
-                progress, token);
-            return;
-        }
-
-        if (source == "docx" && target is "txt" or "md" or "epub")
-        {
-            await ConvertDocxBuiltInAsync(input, target, outputPath, tools, workspace,
-                DocumentConversionOptions.RepairDocx(request), progress, token);
-            return;
-        }
-
-        if (source is "doc" or "docx" && target == "pdf")
-        {
-            await ConvertOfficeToPdfAsync(input, outputPath, tools, progress, token);
-            return;
-        }
-
-        if (source == "doc" && target is "txt" or "md" or "epub" or "mobi" or "azw3")
-        {
-            var libreOffice = tools.FirstOrDefault(tool => tool.Kind == ExternalToolKind.LibreOffice && tool.IsAvailable);
-            if (libreOffice is not null)
-            {
-                try
+                token.ThrowIfCancellationRequested();
+                var step = steps[i];
+                var last = i == steps.Count - 1;
+                switch (step.EngineId)
                 {
-                    var docx = workspace.File("source.docx");
-                    progress?.Report(new ConversionExecutionProgress(10, "office", LocalizationService.T("ConversionUiNormalizingDocToDocx")));
-                    await _externalConverter.ConvertWithLibreOfficeAsync(libreOffice, input, docx, token);
-                    if (target is "txt" or "md" or "epub")
-                    {
-                        await ConvertDocxBuiltInAsync(docx, target, outputPath, tools, workspace,
-                            repairDocx: false, progress, token);
-                    }
-                    else
-                    {
-                        var epub = workspace.File("book.epub");
-                        await ConvertDocxBuiltInAsync(docx, "epub", epub, tools, workspace,
-                            repairDocx: false, progress, token);
-                        await _externalConverter.ConvertWithCalibreAsync(RequireTool(tools, ExternalToolKind.Calibre), epub, outputPath,
-                            cancellationToken: token, diagnosticIntermediate: true);
-                    }
-                    return;
-                }
-                catch when (_windowsFilterTextExtractor.IsAvailable(input) && !token.IsCancellationRequested)
-                {
-                    progress?.Report(new ConversionExecutionProgress(30, "windows-ifilter", LocalizationService.T("ConversionUiLibreOfficeFailedUsingIFilter")));
+                    case ExternalEngineIds.Word:
+                    case ExternalEngineIds.LibreOffice when step.TargetFormatId == "pdf":
+                        await ConvertOfficeToPdfAsync(step.EngineId, currentPath, outputPath, tools, progress, token);
+                        break;
+                    case ExternalEngineIds.LibreOffice:
+                        Report(10, "office", "ConversionUiNormalizingDocToDocx");
+                        currentPath = workspace.File("source.docx");
+                        await _externalConverter.ConvertWithLibreOfficeAsync(RequireTool(tools, ExternalToolKind.LibreOffice),
+                            source, currentPath, token);
+                        break;
+                    case ExternalEngineIds.Caj2Pdf:
+                        Report(15, "caj2pdf", "ConversionUiConvertingCajToPdf");
+                        currentPath = last ? outputPath : workspace.File("source.pdf");
+                        await _externalConverter.ConvertWithCaj2PdfAsync(RequireTool(tools, ExternalToolKind.Caj2Pdf),
+                            source, currentPath, token);
+                        break;
+                    case ExternalEngineIds.Calibre:
+                        progress?.Report(new(i == 0 ? 20 : 82, "calibre",
+                            LocalizationService.T("ConversionUiGeneratingFormat", target.ToUpperInvariant())));
+                        await _externalConverter.ConvertWithCalibreAsync(RequireTool(tools, ExternalToolKind.Calibre),
+                            currentPath, outputPath, cancellationToken: token, diagnosticIntermediate: i != 0);
+                        break;
+                    case DocumentEngineIds.WindowsFilter:
+                        document = await ReadFilterAsync();
+                        break;
+                    case DocumentEngineIds.DocxReader:
+                        Report(20, "docx", "ConversionUiReadingDocxStructure");
+                        document = await _docxImporter.ReadAsync(currentPath,
+                            !legacyImport && DocumentConversionOptions.RepairDocx(request), tools, workspace.Path, progress, token);
+                        break;
+                    case DocumentEngineIds.PdfExtractor:
+                    case DocumentEngineIds.PdfOcr:
+                        Report(20, "pdf-extract", "ConversionUiExtractingPdfText");
+                        var extracted = await _pdfExtractor.ExtractAsync(currentPath, language, password, token);
+                        if (step.EngineId == DocumentEngineIds.PdfOcr)
+                        {
+                            Report(70, "pdf-text-layer", "ConversionUiWritingOcrTextLayer");
+                            await _searchablePdfWriter.WriteLayoutsAsync(currentPath, extracted.OcrLayouts, outputPath, password, token);
+                        }
+                        else document = extracted.Document;
+                        break;
+                    case DocumentEngineIds.PdfRenderer:
+                        Report(20, "pdf-render", "ConversionUiRenderingPdfPages");
+                        pages = _renderPdfPages(currentPath, recognizeText: true, language, password, workspace.Path, cancellationToken: token);
+                        document = await _imageDocumentBuilder.BuildAsync(pages, Path.GetFileNameWithoutExtension(currentPath),
+                            language ?? "zh-CN", fixedLayout: true, cancellationToken: token);
+                        break;
+                    case DocumentEngineIds.ImageDecoder:
+                    case DocumentEngineIds.ImageOcr:
+                        Report(15, "image-decode", "ConversionUiDecodingImagePages");
+                        var ocr = step.EngineId == DocumentEngineIds.ImageOcr;
+                        pages = _decodeImagePages(inputs, ocr, language, workspace.Path, includeImageContent: target != "txt", cancellationToken: token);
+                        if (ocr) document = await _imageDocumentBuilder.BuildAsync(pages,
+                            Option(request, "title") ?? Path.GetFileNameWithoutExtension(source), language ?? "zh-CN", fixedLayout, token);
+                        break;
+                    case DocumentEngineIds.ImagePdf:
+                        Report(65, "image-pdf", "ConversionUiMergingImagePages");
+                        await _imagePdfWriter.WriteAsync(pages ?? throw new InvalidDataException("Missing image pages."), outputPath, token);
+                        break;
+                    case DocumentEngineIds.DocxWriter:
+                        Report(70, "docx-write", "PdfDocxWriting");
+                        await _pdfDocxWriter.WriteAsync(RequiredDocument(), outputPath, token);
+                        break;
+                    case DocumentEngineIds.TextWriter:
+                        Report(70, "text", "ConversionUiWritingUtf8Text");
+                        await _textWriter.WriteAsync(RequiredDocument(), outputPath, token);
+                        break;
+                    case DocumentEngineIds.MarkdownWriter:
+                        Report(70, "markdown", "ConversionUiWritingMarkdown");
+                        await _markdownWriter.WriteAsync(RequiredDocument(), outputPath, token);
+                        break;
+                    case DocumentEngineIds.EpubWriter:
+                        Report(65, "epub", "ConversionUiGeneratingEpub");
+                        currentPath = last ? outputPath : workspace.File("book.epub");
+                        // Legacy DOC and native DOCX structure import produce flowing content.
+                        var useFixedLayout = fixedLayout && first.SourceFormatId is not ("doc" or "docx");
+                        await _epubWriter.WriteAsync(_epubAdapter.CreatePublication(RequiredDocument(), fixedLayout: useFixedLayout),
+                            currentPath, token);
+                        break;
+                    default:
+                        throw new InvalidDataException($"Unrecognized document conversion step: {step.EngineId}");
                 }
             }
+        }
 
-            progress?.Report(new ConversionExecutionProgress(20, "windows-ifilter", LocalizationService.T("ConversionUiExtractingWithIFilter")));
-            var extraction = await _windowsFilterTextExtractor.ExtractAsync(input, token);
+        NormalizedDocument RequiredDocument() => document ?? throw new InvalidDataException("Missing normalized document.");
+
+        async Task<NormalizedDocument> ReadFilterAsync()
+        {
+            Report(20, "windows-ifilter", "ConversionUiExtractingWithIFilter");
+            var extraction = await _windowsFilterTextExtractor.ExtractAsync(source, token);
             if (!extraction.IsAvailable || string.IsNullOrWhiteSpace(extraction.Text))
-            {
                 throw new DocumentEngineUnavailableException(extraction.Error ?? LocalizationService.T("ConversionUiDocNoIFilter"));
-            }
-            var document = WindowsFilterTextExtractor.CreateDocument(input, extraction.Text, language ?? "zh-CN");
-            await WriteNormalizedAsync(document, target, outputPath, tools, workspace, progress, fixedLayout: false, token);
-            return;
+            return WindowsFilterTextExtractor.CreateDocument(source, extraction.Text, language ?? "zh-CN");
         }
 
-        if (source == "epub" && target is "mobi" or "azw3")
-        {
-            progress?.Report(new ConversionExecutionProgress(20, "calibre", LocalizationService.T("ConversionUiGeneratingFormat", target.ToUpperInvariant())));
-            await _externalConverter.ConvertWithCalibreAsync(RequireTool(tools, ExternalToolKind.Calibre), input, outputPath,
-                cancellationToken: token, diagnosticIntermediate: false);
-            return;
-        }
-
-        if (source == "docx" && target is "mobi" or "azw3")
-        {
-            var epub = workspace.File("book.epub");
-            await ConvertDocxBuiltInAsync(input, "epub", epub, tools, workspace,
-                DocumentConversionOptions.RepairDocx(request), progress, token);
-            progress?.Report(new ConversionExecutionProgress(75, "calibre", LocalizationService.T("ConversionUiGeneratingFormat", target.ToUpperInvariant())));
-            await _externalConverter.ConvertWithCalibreAsync(RequireTool(tools, ExternalToolKind.Calibre), epub, outputPath,
-                cancellationToken: token, diagnosticIntermediate: true);
-            return;
-        }
-
-        if (source is "caj" or "hn" or "c8" or "kdh")
-        {
-            var pdfPath = target == "pdf" ? outputPath : workspace.File("source.pdf");
-            progress?.Report(new ConversionExecutionProgress(15, "caj2pdf", LocalizationService.T("ConversionUiConvertingCajToPdf")));
-            await _externalConverter.ConvertWithCaj2PdfAsync(RequireTool(tools, ExternalToolKind.Caj2Pdf), input, pdfPath, token);
-            if (target == "pdf") return;
-
-            await ConvertPdfBuiltInAsync(pdfPath, target, outputPath, language, password: null, fixedLayout, tools, workspace, progress, token);
-            return;
-        }
-
-        throw new NotSupportedException(LocalizationService.T("ConversionUiRouteNotImplemented", source, target));
-    }
-
-    private async Task ConvertPdfBuiltInAsync(
-        string inputPath,
-        string target,
-        string outputPath,
-        string? language,
-        string? password,
-        bool fixedLayout,
-        IReadOnlyList<ExternalToolInfo> tools,
-        PipelineWorkspace workspace,
-        IProgress<ConversionExecutionProgress>? progress,
-        CancellationToken token)
-    {
-        if (fixedLayout && target is "epub" or "mobi" or "azw3")
-        {
-            progress?.Report(new ConversionExecutionProgress(20, "pdf-render", LocalizationService.T("ConversionUiRenderingPdfPages")));
-            var pages = _renderPdfPages(inputPath, recognizeText: true,
-                language, password, workspace.Path, cancellationToken: token);
-            var document = await _imageDocumentBuilder.BuildAsync(
-                pages,
-                Path.GetFileNameWithoutExtension(inputPath),
-                language ?? "zh-CN",
-                fixedLayout: true,
-                cancellationToken: token);
-            await WriteNormalizedAsync(document, target, outputPath, tools, workspace, progress, fixedLayout: true, token);
-            return;
-        }
-
-        progress?.Report(new ConversionExecutionProgress(20, "pdf-extract", LocalizationService.T("ConversionUiExtractingPdfText")));
-        var extraction = await _pdfExtractor.ExtractAsync(inputPath, language, password, token);
-        if (target == "pdf")
-        {
-            progress?.Report(new ConversionExecutionProgress(70, "pdf-text-layer", LocalizationService.T("ConversionUiWritingOcrTextLayer")));
-            await _searchablePdfWriter.WriteLayoutsAsync(inputPath, extraction.OcrLayouts, outputPath, password, token);
-            return;
-        }
-
-        await WriteNormalizedAsync(extraction.Document, target, outputPath, tools, workspace, progress, fixedLayout: false, token);
-    }
-
-    private async Task WriteNormalizedAsync(
-        NormalizedDocument document,
-        string target,
-        string outputPath,
-        IReadOnlyList<ExternalToolInfo> tools,
-        PipelineWorkspace workspace,
-        IProgress<ConversionExecutionProgress>? progress,
-        bool fixedLayout,
-        CancellationToken token)
-    {
-        if (target == "docx")
-        {
-            progress?.Report(new ConversionExecutionProgress(70, "docx-write", LocalizationService.T("PdfDocxWriting")));
-            await _pdfDocxWriter.WriteAsync(document, outputPath, token);
-            return;
-        }
-
-        if (target == "txt")
-        {
-            progress?.Report(new ConversionExecutionProgress(70, "text", LocalizationService.T("ConversionUiWritingUtf8Text")));
-            await _textWriter.WriteAsync(document, outputPath, token);
-            return;
-        }
-
-        if (target == "md")
-        {
-            progress?.Report(new ConversionExecutionProgress(70, "markdown", LocalizationService.T("ConversionUiWritingMarkdown")));
-            await _markdownWriter.WriteAsync(document, outputPath, token);
-            return;
-        }
-
-        var epubPath = target == "epub" ? outputPath : workspace.File("book.epub");
-        progress?.Report(new ConversionExecutionProgress(65, "epub", LocalizationService.T("ConversionUiGeneratingEpub")));
-        await _epubWriter.WriteAsync(_epubAdapter.CreatePublication(document, fixedLayout: fixedLayout), epubPath, token);
-        if (target is "mobi" or "azw3")
-        {
-            progress?.Report(new ConversionExecutionProgress(82, "calibre", LocalizationService.T("ConversionUiGeneratingFormat", target.ToUpperInvariant())));
-            await _externalConverter.ConvertWithCalibreAsync(
-                RequireTool(tools, ExternalToolKind.Calibre),
-                epubPath,
-                outputPath,
-                cancellationToken: token, diagnosticIntermediate: true);
-        }
+        void Report(double fraction, string stage, string key) =>
+            progress?.Report(new ConversionExecutionProgress(fraction, stage, LocalizationService.T(key)));
     }
 
     private async Task<bool> ValidateOutputAsync(string format, string outputPath, CancellationToken token)
@@ -400,25 +318,8 @@ internal sealed class DocumentConversionPipeline : IConversionEngine
     private static string? Option(ConversionRequest request, string name) =>
         request.Options.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value) ? value.Trim() : null;
 
-    private static string Normalize(string value) => value.Trim().TrimStart('.').ToLowerInvariant();
-
-    private async Task ConvertDocxBuiltInAsync(
-        string inputPath,
-        string target,
-        string outputPath,
-        IReadOnlyList<ExternalToolInfo> tools,
-        PipelineWorkspace workspace,
-        bool repairDocx,
-        IProgress<ConversionExecutionProgress>? progress,
-        CancellationToken token)
-    {
-        progress?.Report(new ConversionExecutionProgress(20, "docx", LocalizationService.T("ConversionUiReadingDocxStructure")));
-        var document = await _docxImporter.ReadAsync(inputPath, repairDocx, tools,
-            workspace.Path, progress, token);
-        await WriteNormalizedAsync(document, target, outputPath, tools, workspace, progress, fixedLayout: false, token);
-    }
-
     private async Task ConvertOfficeToPdfAsync(
+        string engineId,
         string inputPath,
         string outputPath,
         IReadOnlyList<ExternalToolInfo> tools,
@@ -427,7 +328,7 @@ internal sealed class DocumentConversionPipeline : IConversionEngine
     {
         var word = tools.FirstOrDefault(tool => tool.Kind == ExternalToolKind.MicrosoftWord && tool.IsAvailable);
         var libreOffice = tools.FirstOrDefault(tool => tool.Kind == ExternalToolKind.LibreOffice && tool.IsAvailable);
-        if (word is not null)
+        if (engineId == ExternalEngineIds.Word && word is not null)
         {
             progress?.Report(new ConversionExecutionProgress(20, "word", LocalizationService.T("ConversionUiExportingPdfWithWord")));
             try

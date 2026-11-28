@@ -28,7 +28,7 @@ public sealed class MediaTaskViewModel : INotifyPropertyChanged, IDisposable
     private bool _targetSelectionRefreshPending;
     private bool _outputGroupExpanded = true;
     private bool _isDetailsExpanded;
-    private FailureResolutionAction _failureAction;
+    private FailureResolutionAction? _failureAction;
 
     public MediaTaskViewModel(MediaTask model)
     {
@@ -122,7 +122,9 @@ public sealed class MediaTaskViewModel : INotifyPropertyChanged, IDisposable
         }
     }
     public bool HasDetailMessage => !string.IsNullOrEmpty(DetailMessage);
-    public FailureResolutionAction FailureAction => _failureAction;
+    // Classification can inspect source files. Resolve it when a card or command
+    // asks, so restoring a large queue does not probe inputs for off-screen rows.
+    public FailureResolutionAction FailureAction => _failureAction ??= ResolveFailureAction();
     public bool HasFailureAction => FailureAction != FailureResolutionAction.None;
     public string FailureActionLabel => FailureAction == FailureResolutionAction.ChooseOutputDirectory
         ? $"{LocalizationService.T("ChooseFolder")} · {LocalizationService.T("StartRetry")}"
@@ -557,8 +559,8 @@ public sealed class MediaTaskViewModel : INotifyPropertyChanged, IDisposable
 
     private void RaiseCardModelProperties(string? propertyName)
     {
-        if (propertyName is nameof(MediaTask.State) or nameof(MediaTask.Message) or nameof(MediaTask.LastError) or
-            nameof(MediaTask.BlockedReason) or nameof(MediaTask.RecoverableOutputId) or nameof(MediaTask.IsRecoveringOutput) or
+        if (propertyName is nameof(MediaTask.Message) or nameof(MediaTask.LastError) or
+            nameof(MediaTask.BlockedReason) or nameof(MediaTask.RecoverableOutputId) or
             nameof(MediaTask.InputPath) or nameof(MediaTask.ParametersVersion)) RaiseFailureActionProperties();
         if (propertyName is nameof(MediaTask.TargetFormat) or nameof(MediaTask.TargetFormatId) or
             nameof(MediaTask.ConversionMode) or nameof(MediaTask.SelectedAudioTrack) or
@@ -594,12 +596,17 @@ public sealed class MediaTaskViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(HasDetailMessage));
     }
 
-    private void RaiseFailureActionProperties()
+    private FailureResolutionAction ResolveFailureAction()
     {
         var action = FailureResolutionService.ForTask(Model);
-        _failureAction = action == FailureResolutionAction.None && !IsTargetAvailable &&
+        return action == FailureResolutionAction.None && !IsTargetAvailable &&
             Model.State is ConversionState.Failed or ConversionState.Blocked && !Model.IsRecoveringOutput
                 ? FailureResolutionAction.OpenEngineSettings : action;
+    }
+
+    private void RaiseFailureActionProperties()
+    {
+        _failureAction = null;
         OnPropertyChanged(nameof(FailureAction));
         OnPropertyChanged(nameof(HasFailureAction));
         OnPropertyChanged(nameof(FailureActionLabel));
@@ -614,7 +621,6 @@ public sealed class MediaTaskViewModel : INotifyPropertyChanged, IDisposable
     {
         OnPropertyChanged(nameof(PdfDocxNotice));
         OnPropertyChanged(nameof(IsPdfDocxNoticeVisible));
-        RaiseFailureActionProperties();
         OnPropertyChanged(nameof(CompactParametersSummary));
         OnPropertyChanged(nameof(StatusSummary));
         OnPropertyChanged(nameof(StatusMetricsSummary));

@@ -82,4 +82,5 @@
     </ItemGroup>
     <Copy SourceFiles="@(_HostRuntimeFile)" DestinationFiles="@(_HostRuntimeFile->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
+  <Import Project="..\..\build\ConversionWorker.targets" />
 </Project>

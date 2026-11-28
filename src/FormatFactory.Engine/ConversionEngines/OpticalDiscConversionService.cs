@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Text;
 using FormatFactoryWinUI.Disc;
 using FormatFactoryWinUI.Models;
 using FormatFactoryWinUI.Services;
@@ -46,18 +45,9 @@ public sealed class OpticalDiscCommandExecutor : IOpticalDiscCommandExecutor
     {
         ArgumentNullException.ThrowIfNull(command);
         cancellationToken.ThrowIfCancellationRequested();
-        var startInfo = new ProcessStartInfo(command.ExecutablePath)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8
-        };
-        if (command.WorkingDirectory is not null) startInfo.WorkingDirectory = command.WorkingDirectory;
-        foreach (var argument in command.Arguments) startInfo.ArgumentList.Add(argument);
-        using var lifetime = ExternalProcessLifetime.Start(startInfo, cancellationToken);
+        using var launch = await ConversionWorkerLaunch.StartAsync(command.ExecutablePath, command.Arguments,
+            null, cancellationToken, workingDirectory: command.WorkingDirectory).ConfigureAwait(false);
+        var lifetime = launch.Lifetime;
         var requireComplete = command.Operation == OpticalDiscOperation.InspectMakeMkvDrives;
         var logPath = LogService.CreateTaskLogPath(Guid.NewGuid());
         using var outputLogProtection = LogFilePolicy.Shared.Protect(logPath);

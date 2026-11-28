@@ -960,20 +960,13 @@ public sealed class AutomationService : IAsyncDisposable
         {
             if (!Directory.Exists(rule.FolderPath))
                 return new FileListing(files, $"{LocalizationService.T("AutomationStateFolderUnavailable")} {rule.FolderPath}");
-            var options = new EnumerationOptions
-            {
-                RecurseSubdirectories = rule.IncludeSubfolders,
-                IgnoreInaccessible = false,
-                AttributesToSkip = FileAttributes.ReparsePoint,
-                ReturnSpecialDirectories = false
-            };
-            foreach (var path in Directory.EnumerateFiles(rule.FolderPath, "*", options))
+            foreach (var entry in FolderDiscovery.Enumerate(rule.FolderPath, rule.IncludeSubfolders, false, true, token))
             {
                 token.ThrowIfCancellationRequested();
-                if (!FormatCatalog.SupportedExtensions.Contains(Path.GetExtension(path)) ||
-                    AutomationRuleMatcher.IsExcludedByDestinations(path, rules)) continue;
-                var fingerprint = FileFingerprintService.Read(path);
-                if (fingerprint is not null && !history.IsExcluded(path, fingerprint)) files[Path.GetFullPath(path)] = fingerprint;
+                var path = entry.Path;
+                if (AutomationRuleMatcher.IsExcludedByDestinations(path, rules)) continue;
+                var fingerprint = entry.Fingerprint;
+                if (!history.IsExcluded(path, fingerprint)) files[Path.GetFullPath(path)] = fingerprint;
             }
             return new FileListing(files, null);
         }

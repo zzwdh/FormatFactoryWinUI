@@ -265,7 +265,7 @@ public sealed partial class QueueSession : IDisposable
         _starts[task.Id] = options;
         ConversionHistoryItem? history = null;
         ErrorCorrelationFacts? sourceFailure = null;
-        return Coordinator.TryStartWithOutcome(task.Id,
+        return Coordinator.TryStartPlanned(task.Id,
             async token =>
             {
                 ConversionOutcome outcome;
@@ -314,7 +314,7 @@ public sealed partial class QueueSession : IDisposable
                 }).ConfigureAwait(false);
             },
             () => batchCompleted is null || _stopping ? Task.CompletedTask : RunSideEffectAsync(batchCompleted),
-            ConversionWorkload.FromTask(task));
+            WorkloadEstimate.FromTask(task));
     }
 
     private async Task<ConversionOutcome> ExecuteAsync(MediaTask task,

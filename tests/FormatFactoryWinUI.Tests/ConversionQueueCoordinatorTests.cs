@@ -408,6 +408,79 @@ public sealed class ConversionQueueCoordinatorTests
         Assert.False(coordinator.HasActiveOperations);
     }
 
+    [Fact]
+    public async Task ReorderPublicationCanCancelItsHeadAndIncreaseCapacityWithoutStartingIt()
+    {
+        using var queue = new ConversionQueueCoordinator(() => ConversionResourceSnapshot.Unknown);
+        var ids = Enumerable.Range(0, 4).Select(_ => Guid.NewGuid()).ToArray();
+        var started = ids.Select(_ => NewSignal()).ToArray();
+        var cancelled = NewSignal();
+        var release = NewSignal();
+        try
+        {
+            for (var i = 0; i < ids.Length; i++)
+            {
+                var index = i;
+                Assert.True(queue.TryStart(ids[i], async token =>
+                {
+                    started[index].TrySetResult(null);
+                    await release.Task.WaitAsync(token);
+                }, () => { if (index == 3) cancelled.TrySetResult(null); return Task.CompletedTask; },
+                _ => Task.CompletedTask, () => Task.CompletedTask));
+            }
+            await started[0].Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(queue.TryReorderPendingOperations([ids[3], ids[2], ids[1]], () =>
+            {
+                queue.ConfigureParallelism(3);
+                Assert.True(queue.Cancel(ids[3]));
+                Assert.False(started[1].Task.IsCompleted);
+                Assert.False(started[2].Task.IsCompleted);
+                Assert.False(started[3].Task.IsCompleted);
+            }));
+            await Task.WhenAll(cancelled.Task, started[1].Task, started[2].Task).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.False(started[3].Task.IsCompleted);
+        }
+        finally
+        {
+            release.TrySetResult(null);
+            await queue.WaitForAllAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Fact]
+    public async Task FailedOrderPublicationLeavesThePreviousFifoInPlace()
+    {
+        using var queue = new ConversionQueueCoordinator(() => ConversionResourceSnapshot.Unknown);
+        var ids = Enumerable.Range(0, 4).Select(_ => Guid.NewGuid()).ToArray();
+        var first = NewSignal();
+        var release = NewSignal();
+        var order = new List<Guid>();
+        void Start(Guid id) => Assert.True(queue.TryStart(id, async token =>
+        {
+            order.Add(id);
+            if (id == ids[0]) { first.TrySetResult(null); await release.Task.WaitAsync(token); }
+        }, () => Task.CompletedTask, _ => Task.CompletedTask, () => Task.CompletedTask));
+
+        Start(ids[0]);
+        await first.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Start(ids[1]);
+        Start(ids[2]);
+        try
+        {
+            Assert.Throws<InvalidOperationException>(() => queue.TryReorderPendingOperations([ids[2], ids[1]], () =>
+            {
+                Start(ids[3]);
+                throw new InvalidOperationException("Publication failed");
+            }));
+        }
+        finally
+        {
+            release.TrySetResult(null);
+            await queue.WaitForAllAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        Assert.Equal(ids, order);
+    }
+
     private static TaskCompletionSource<object?> NewSignal() =>
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 

@@ -23,7 +23,7 @@ public sealed class DocxImportService(DocxDocumentReader reader, ExternalDocumen
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            return await reader.ReadAsync(inputPath, cancellationToken);
+            return await reader.ReadForConversionAsync(inputPath, workspacePath, null, cancellationToken);
         }
         catch (InvalidDataException originalError) when (repairOnValidationFailure && !cancellationToken.IsCancellationRequested)
         {
@@ -49,8 +49,8 @@ public sealed class DocxImportService(DocxDocumentReader reader, ExternalDocumen
                 NormalizeRegeneratedGridSpacing(normalizedPath, cancellationToken);
                 // A successful external process is insufficient: the regenerated
                 // package must pass the same full schema and structure checks.
-                return await reader.ReadAsync(normalizedPath, cancellationToken,
-                    fallbackTitle: Path.GetFileNameWithoutExtension(inputPath));
+                return await reader.ReadForConversionAsync(normalizedPath, workspace,
+                    Path.GetFileNameWithoutExtension(inputPath), cancellationToken);
             }
             catch (Exception repairError) when (repairError is IOException or InvalidDataException or
                 InvalidOperationException or XmlException or FormatException)

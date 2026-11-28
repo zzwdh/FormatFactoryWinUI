@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using FormatFactoryWinUI.Models;
 using FormatFactoryWinUI.Services;
 
@@ -18,6 +19,22 @@ public sealed class ConversionServiceProcessTests
 
         Assert.True(cancellation.IsCancellationRequested);
         Assert.False(File.Exists(logPath));
+    }
+
+    [Fact]
+    public async Task ShortLivedToolsCompleteAcrossStartupAndFinalExitWaits()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var shell = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+        await Parallel.ForEachAsync(Enumerable.Range(0, 48),
+            new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = deadline.Token },
+            async (_, token) =>
+            {
+                using var launch = await ConversionWorkerLaunch.StartAsync(shell, ["/d", "/c", "exit", "/b", "17"],
+                    null, token);
+                await launch.Lifetime.WaitAndDrainAsync(TimeSpan.FromSeconds(5), token);
+                Assert.Equal(17, launch.Lifetime.Process.ExitCode);
+            });
     }
 
     [Fact]
@@ -88,6 +105,51 @@ public sealed class ConversionServiceProcessTests
         }
         finally
         {
+            await CancelAndObserveAsync(cancellation, run);
+        }
+    }
+
+    [Fact]
+    public async Task PauseAndResumeSuspendTheEncoderThreadLaunchedByTheWorker()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using var directory = new TemporaryDirectory();
+        var identity = Path.Combine(directory.Path, "encoder-thread.txt");
+        var eventName = $"Local\\FluentFormatConverter-Tests-{Guid.NewGuid():N}";
+        using var release = new EventWaitHandle(false, EventResetMode.ManualReset, eventName);
+        using var cancellation = new CancellationTokenSource();
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var runner = new FfmpegProcessRunner();
+        var run = RunHelperAsync(runner, new MediaTask(), cancellation.Token, _ => ready.TrySetResult(),
+            "pause-probe", identity, eventName);
+        var timeout = TimeSpan.FromSeconds(10);
+        try
+        {
+            await ready.Task.WaitAsync(timeout);
+            var ids = (await File.ReadAllTextAsync(identity)).Split(' ');
+            using var encoder = Process.GetProcessById(int.Parse(ids[0]));
+            var threadId = int.Parse(ids[1]);
+            Assert.True(runner.Pause());
+            release.Set(); // A running encoder can now exit immediately.
+
+            using var deadline = new CancellationTokenSource(timeout);
+            while (true)
+            {
+                encoder.Refresh();
+                Assert.False(encoder.HasExited, "The encoder ran while its conversion was paused.");
+                var thread = encoder.Threads.Cast<ProcessThread>().Single(item => item.Id == threadId);
+                if (thread.ThreadState == System.Diagnostics.ThreadState.Wait &&
+                    thread.WaitReason == ThreadWaitReason.Suspended) break;
+                await Task.Delay(20, deadline.Token);
+            }
+
+            Assert.True(runner.Resume());
+            Assert.Equal(0, (await run.WaitAsync(timeout)).ExitCode);
+            Assert.False(runner.HasActiveProcess);
+        }
+        finally
+        {
+            release.Set();
             await CancelAndObserveAsync(cancellation, run);
         }
     }

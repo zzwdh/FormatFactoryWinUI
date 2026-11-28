@@ -42,6 +42,7 @@ public sealed partial class MainWindow
         {
             ExtendsContentIntoTitleBar = true;
             SetTitleBar(TitleDragRegion);
+            AppWindow.Changed += NavigationAppWindowChanged;
         }
         else
         {
@@ -163,6 +164,12 @@ public sealed partial class MainWindow
         UpdateNavigationTitleBar();
     }
 
+    private void NavigationAppWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
+    {
+        if (args.DidSizeChange || args.DidPositionChange || args.DidPresenterChange || args.DidVisibilityChange)
+            UpdateNavigationTitleBar();
+    }
+
     private void UpdateNavigationTitleBar()
     {
         if (!_navigationReady || _windowClosed || !ExtendsContentIntoTitleBar) return;
@@ -170,9 +177,13 @@ public sealed partial class MainWindow
         {
             var scale = RootGrid.XamlRoot?.RasterizationScale ?? 1;
             var bar = AppWindow.TitleBar;
-            // Reserve caption-button space for the entire header, including the toggle
-            // when right-to-left layout places that control on the other side.
-            AppTitleBar.Margin = new Thickness(bar.LeftInset / scale, 0, bar.RightInset / scale, 0);
+            // Insets describe physical window edges. RootGrid mirrors its children's
+            // margins in RTL, so map the reserved space back to those physical edges.
+            var left = bar.LeftInset / scale;
+            var right = bar.RightInset / scale;
+            AppTitleBar.Margin = RootGrid.FlowDirection == FlowDirection.RightToLeft
+                ? new Thickness(right, 0, left, 0)
+                : new Thickness(left, 0, right, 0);
             // Windows 10 supplies the caption colors even with an extended title bar.
             if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000)) return;
             bar.ButtonBackgroundColor = Color.FromArgb(0, 0, 0, 0);
@@ -188,6 +199,7 @@ public sealed partial class MainWindow
         RootGrid.SizeChanged -= NavigationRoot_SizeChanged;
         RootGrid.Loaded -= NavigationLoaded;
         RootGrid.ActualThemeChanged -= NavigationThemeChanged;
+        AppWindow.Changed -= NavigationAppWindowChanged;
         FluentMotion.PreferencesChanged -= NavigationPreferencesChanged;
         if (_navigationXamlRoot is not null) _navigationXamlRoot.Changed -= NavigationXamlRootChanged;
         _navigationXamlRoot = null;

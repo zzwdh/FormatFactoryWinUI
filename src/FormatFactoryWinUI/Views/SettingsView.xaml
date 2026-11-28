@@ -456,6 +456,18 @@
                     </controls:AdaptiveGrid>
                 </StackPanel>
             </Border>
+            <Border controls:CardInteraction.Enable="True" Style="{StaticResource FFCardStyle}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="GitHub" Style="{StaticResource FFSectionTitleTextStyle}" />
+                    <controls:AdaptiveGrid ColumnSpacing="8" RowSpacing="4" AutoStackCompact="True">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <HyperlinkButton x:Name="ProjectHomeLink" x:FieldModifier="internal" Content="Project homepage"
+                                         NavigateUri="https://github.com/zzwdh/FormatFactoryWinUI" />
+                        <HyperlinkButton x:Name="SubmitIssueLink" x:FieldModifier="internal" Grid.Column="1" Content="Open an issue"
+                                         NavigateUri="https://github.com/zzwdh/FormatFactoryWinUI/issues/new" />
+                    </controls:AdaptiveGrid>
+                </StackPanel>
+            </Border>
             <TextBlock x:Name="FooterText" x:FieldModifier="internal" Text="FluentFormatConverter · Local conversion" Opacity="0.55" FontSize="12" />
         </StackPanel>
     </ScrollViewer>

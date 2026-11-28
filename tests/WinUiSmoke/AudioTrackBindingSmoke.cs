@@ -10,6 +10,12 @@ namespace FormatFactoryWinUI;
 
 public partial class App
 {
+    private ContentPresenter CreateQueueRowPresenter(MediaTaskViewModel task) => new()
+    {
+        ContentTemplate = ((ListView)Field("TaskList")!).ItemTemplate,
+        Content = task
+    };
+
     private async Task CheckPdfPasswordIdentityAsync()
     {
         await CheckAsync("A loaded PDF password editor follows its task when the same row is rebound", async () =>
@@ -129,8 +135,7 @@ public partial class App
                     session.TaskAdded += model =>
                     {
                         rowModel = new MediaTaskViewModel(model) { IsDetailsExpanded = true };
-                        row = (FrameworkElement)((ListView)Field("TaskList")!).ItemTemplate.LoadContent();
-                        row.DataContext = rowModel;
+                        row = CreateQueueRowPresenter(rowModel);
                         ((Grid)Field("RootGrid")!).Children.Add(row);
                         published.TrySetResult(model);
                     };
@@ -146,8 +151,9 @@ public partial class App
                     row!.Measure(new Windows.Foundation.Size(900, double.PositiveInfinity));
                     row.Arrange(new Windows.Foundation.Rect(0, 0, 900, row.DesiredSize.Height));
                     row.UpdateLayout();
-                    var audio = FindDescendants<ComboBox>(row).Single(control =>
+                    ComboBox CurrentAudioSelector() => FindDescendants<ComboBox>(row).Single(control =>
                         ReferenceEquals(control.ItemsSource, rowModel!.AudioTrackOptions));
+                    var audio = CurrentAudioSelector();
                     Require(restored.SelectedAudioTrack == selected && rowModel!.AudioTrackOptions.Count == 0,
                         "Preparing the restored binding changed the retained selection or prefilled tracks.");
                     var tracks = Enumerable.Range(0, count).Select(index => new AudioTrackInfo
@@ -189,6 +195,17 @@ public partial class App
                         Require(restored.SelectedAudioTrack == selected && audio.SelectedIndex == expected,
                             "A language rebuild reset or invalidated the retained audio selection.");
                     }
+                    rowModel.IsDetailsExpanded = false;
+                    await YieldLayoutAsync();
+                    row.UpdateLayout();
+                    Require(!FindDescendants<ComboBox>(row).Any(control => ReferenceEquals(control.ItemsSource, rowModel.AudioTrackOptions))
+                        && restored.SelectedAudioTrack == selected, "Closing the restored editor lost its retained audio choice.");
+                    rowModel.IsDetailsExpanded = true;
+                    await YieldLayoutAsync();
+                    row.UpdateLayout();
+                    audio = CurrentAudioSelector();
+                    Require(audio.IsEnabled && audio.SelectedIndex == expected && restored.SelectedAudioTrack == selected,
+                        "Reopening the restored editor did not recover its audio choice.");
                     audio.SelectedIndex = 0;
                     Require(restored.SelectedAudioTrack == 0, "A real valid audio choice was not written to the model.");
                     audio.SelectedIndex = count - 1;

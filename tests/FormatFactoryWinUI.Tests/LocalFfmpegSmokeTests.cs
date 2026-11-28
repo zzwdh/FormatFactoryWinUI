@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Text.Json;
 using FormatFactoryWinUI.Services;
 using Xunit.Sdk;
@@ -6,6 +7,55 @@ namespace FormatFactoryWinUI.Tests;
 
 public sealed class LocalFfmpegSmokeTests
 {
+    [Fact]
+    public async Task PngToIco_ConversionServicePublishesSevenIndexedPngFrames()
+    {
+        var ffmpeg = FindExecutable("ffmpeg.exe");
+        var ffprobe = FindExecutable("ffprobe.exe");
+        if (ffmpeg is null || ffprobe is null) throw SkipException.ForSkip("Local FFmpeg is unavailable.");
+        using var directory = new TemporaryDirectory();
+        var input = Path.Combine(directory.Path, "测试 图标.png");
+        var outputDirectory = Path.Combine(directory.Path, "图标 输出");
+        var generated = await ProcessRunner.RunAsync(ffmpeg,
+            ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=120x80",
+             "-frames:v", "1", "-c:v", "png", input], TimeSpan.FromSeconds(20));
+        Assert.True(generated.ExitCode == 0, generated.StandardError);
+        var task = new FormatFactoryWinUI.Models.MediaTask
+        {
+            InputPath = input, SourceFormatId = "png", TargetFormatId = "ico", ConversionMode = "balanced",
+            Probe = await new MediaProbeService().ProbeAsync(ffprobe, input)
+        };
+        var result = await new ConversionService().ConvertAsync(task, ffmpeg,
+            new FormatFactoryWinUI.Models.AppSettings
+            {
+                OutputMode = "custom", CustomOutputDirectory = outputDirectory, HardwareAcceleration = false
+            }, _ => { }, default);
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(Path.Combine(outputDirectory, "测试 图标.ico"), result.OutputPath);
+        var data = await File.ReadAllBytesAsync(result.OutputPath);
+        int[] sizes = [16, 24, 32, 48, 64, 128, 256];
+        Assert.Equal(new byte[] { 0, 0, 1, 0, 7, 0 }, data[..6]);
+        var offset = 6 + sizes.Length * 16;
+        for (var i = 0; i < sizes.Length; i++)
+        {
+            var entry = data.AsSpan(6 + i * 16, 16);
+            var encodedSize = sizes[i] == 256 ? 0 : sizes[i];
+            Assert.Equal(encodedSize, entry[0]);
+            Assert.Equal(encodedSize, entry[1]);
+            var length = BinaryPrimitives.ReadInt32LittleEndian(entry[8..]);
+            Assert.Equal(offset, BinaryPrimitives.ReadInt32LittleEndian(entry[12..]));
+            Assert.InRange(length, 33, data.Length - offset);
+            var frame = data.AsSpan(offset, length);
+            Assert.Equal(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }, frame[..8].ToArray());
+            Assert.True(frame[12..16].SequenceEqual("IHDR"u8));
+            Assert.Equal(sizes[i], BinaryPrimitives.ReadInt32BigEndian(frame[16..]));
+            Assert.Equal(sizes[i], BinaryPrimitives.ReadInt32BigEndian(frame[20..]));
+            offset += length;
+        }
+        Assert.Equal(data.Length, offset);
+    }
+
     [Fact]
     public async Task VideoAudioExtraction_WithClearedAudioSelection_ConvertsFirstTrack()
     {

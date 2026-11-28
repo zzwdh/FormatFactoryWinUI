@@ -18,18 +18,21 @@ public sealed class ConversionQueueCoordinator : IDisposable
     private const int MaximumParallelism = 4;
     private enum CancellationRequest { TaskCancel, WaitingCancel, Removal, CancelAll, QueueStop, QueueDisposal }
 
-    private sealed class OperationState(Guid taskId, ConversionWorkload workload) : IDisposable
+    private sealed class OperationState(SchedulingCandidate demand) : IDisposable
     {
         private readonly object _syncRoot = new();
         private readonly CancellationTokenSource _cancellation = new();
         private readonly TaskCompletionSource<object?> _completion =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private bool _cancelling;
         private bool _disposed;
 
         public CancellationToken Token => _cancellation.Token;
         public Task Completion => _completion.Task;
-        public Guid TaskId { get; } = taskId;
-        public ConversionWorkload Workload { get; } = workload;
+        public Guid TaskId => Demand.Id;
+        public SchedulingCandidate Demand { get; } = demand;
+        public ConversionWorkload? Reservation { get; set; }
+        public LinkedListNode<OperationState>? PendingNode { get; set; }
         public TaskCompletionSource<bool> Admission { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         // Accessed only under the coordinator lock. A reserved slot is already running
         // for ordering purposes, even before its delegate publishes a UI state change.
@@ -40,23 +43,21 @@ public sealed class ConversionQueueCoordinator : IDisposable
         {
             lock (_syncRoot)
             {
-                if (!_disposed && !_cancellation.IsCancellationRequested)
+                if (_disposed || _cancelling || _cancellation.IsCancellationRequested) return;
+                _cancelling = true;
+            }
+            var requestedAt = DateTimeOffset.UtcNow;
+            try { _cancellation.Cancel(); }
+            catch (Exception error) { LogSafely(error); }
+            finally
+            {
+                lock (_syncRoot)
                 {
-                    var requestedAt = DateTimeOffset.UtcNow;
-                    try
-                    {
-                        _cancellation.Cancel();
-                    }
-                    catch (Exception ex)
-                    {
-                        LogSafely(ex);
-                    }
-                    finally
-                    {
-                        SafeDiagnostics.Write(FormattableString.Invariant(
-                            $"Queue cancellation request: session={RuntimeFailureDiagnostics.SessionId:N} task={TaskId:N} reason={request} requested_utc={requestedAt:O}"));
-                    }
+                    _cancelling = false;
+                    if (_disposed) _cancellation.Dispose();
                 }
+                SafeDiagnostics.Write(FormattableString.Invariant(
+                    $"Queue cancellation request: session={RuntimeFailureDiagnostics.SessionId:N} task={TaskId:N} reason={request} requested_utc={requestedAt:O}"));
             }
         }
 
@@ -72,7 +73,7 @@ public sealed class ConversionQueueCoordinator : IDisposable
                 }
 
                 _disposed = true;
-                _cancellation.Dispose();
+                if (!_cancelling) _cancellation.Dispose();
             }
         }
     }
@@ -82,11 +83,11 @@ public sealed class ConversionQueueCoordinator : IDisposable
     private readonly HashSet<OperationState> _operations = [];
     private readonly Dictionary<Guid, OperationState> _executingOperations = [];
     private readonly HashSet<Guid> _removeAfterOperation = [];
-    private readonly List<OperationState> _admissionQueue = [];
+    private readonly LinkedList<OperationState> _admissionQueue = new();
     private readonly HashSet<OperationState> _runningOperations = [];
     private readonly Func<ConversionResourceSnapshot> _resourceSnapshot;
     private Timer? _admissionTimer;
-    private int _runningCount;
+
     private int _desiredParallelism = MinimumParallelism;
     private int _completionCallbacksInProgress;
     private int _orderPublicationsInProgress;
@@ -141,17 +142,34 @@ public sealed class ConversionQueueCoordinator : IDisposable
     {
         ArgumentNullException.ThrowIfNull(orderedTaskIds);
         ArgumentNullException.ThrowIfNull(publishOrder);
-        var positions = orderedTaskIds.Select((id, index) => (id, index)).ToDictionary(item => item.id, item => item.index);
+        if (orderedTaskIds.Count != orderedTaskIds.Distinct().Count()) throw new ArgumentException("Repeated pending task ID.", nameof(orderedTaskIds));
         lock (_syncRoot)
         {
-            if (_disposed || !_acceptingOperations || orderedTaskIds.Any(id =>
-                    _executingOperations.TryGetValue(id, out var state) &&
-                    (state.IsAdmitted || state.IsCancellationPending || state.Token.IsCancellationRequested))) return false;
-            var ordered = _admissionQueue.OrderBy(state => positions.GetValueOrDefault(state.TaskId, int.MaxValue)).ToArray();
-            _admissionQueue.Clear();
-            _admissionQueue.AddRange(ordered);
+            if (_disposed || !_acceptingOperations || _orderPublicationsInProgress != 0) return false;
+            var unavailable = _executingOperations.Values.Where(state => state.IsAdmitted ||
+                state.IsCancellationPending || state.Token.IsCancellationRequested).Select(state => state.TaskId);
+            var decision = ConversionScheduler.Schedule(_admissionQueue.Select(state => state.Demand), [],
+                _desiredParallelism, ConversionResourceSnapshot.Unknown, orderedTaskIds, unavailable);
+            if (!decision.Accepted) return false;
+            var order = decision.Ordered ?? throw new InvalidDataException("Missing scheduler order.");
+            if (order.Length != _admissionQueue.Count || order.Distinct().Count() != order.Length ||
+                order.Any(id => !_executingOperations.TryGetValue(id, out var state) || state.PendingNode is null))
+                throw new InvalidDataException("Unexpected scheduler order.");
+            var nodes = order.Select(id => _executingOperations[id].PendingNode!).ToArray();
             _orderPublicationsInProgress++;
-            try { publishOrder(); }
+            try
+            {
+                publishOrder();
+                // Callbacks may have cancelled rows or appended new ones. Publish
+                // the accepted order of surviving rows ahead of those new arrivals.
+                for (var i = nodes.Length - 1; i >= 0; i--)
+                {
+                    var node = nodes[i];
+                    if (node.List is null) continue;
+                    _admissionQueue.Remove(node);
+                    _admissionQueue.AddFirst(node);
+                }
+            }
             finally
             {
                 _orderPublicationsInProgress--;
@@ -187,14 +205,20 @@ public sealed class ConversionQueueCoordinator : IDisposable
         }, cancelledBeforeStart, operationCompleted, batchCompleted, workload);
     }
 
-    public bool TryStartWithOutcome(
-        Guid taskId,
-        Func<CancellationToken, Task<ConversionOutcome>> operation,
-        Func<Task> cancelledBeforeStart,
-        Func<ConversionQueueOperationCompleted, Task> operationCompleted,
-        Func<Task> batchCompleted,
-        ConversionWorkload? workload = null)
+    public bool TryStartWithOutcome(Guid taskId, Func<CancellationToken, Task<ConversionOutcome>> operation,
+        Func<Task> cancelledBeforeStart, Func<ConversionQueueOperationCompleted, Task> operationCompleted,
+        Func<Task> batchCompleted, ConversionWorkload? workload = null) =>
+        Start(new(taskId, workload ?? ConversionWorkload.Unspecified, null), operation, cancelledBeforeStart, operationCompleted, batchCompleted);
+
+    internal bool TryStartPlanned(Guid taskId, Func<CancellationToken, Task<ConversionOutcome>> operation,
+        Func<Task> cancelledBeforeStart, Func<ConversionQueueOperationCompleted, Task> operationCompleted,
+        Func<Task> batchCompleted, WorkloadEstimate estimate) =>
+        Start(new(taskId, null, estimate), operation, cancelledBeforeStart, operationCompleted, batchCompleted);
+
+    private bool Start(SchedulingCandidate demand, Func<CancellationToken, Task<ConversionOutcome>> operation,
+        Func<Task> cancelledBeforeStart, Func<ConversionQueueOperationCompleted, Task> operationCompleted, Func<Task> batchCompleted)
     {
+        var taskId = demand.Id;
         ArgumentNullException.ThrowIfNull(operation);
         ArgumentNullException.ThrowIfNull(cancelledBeforeStart);
         ArgumentNullException.ThrowIfNull(operationCompleted);
@@ -209,13 +233,13 @@ public sealed class ConversionQueueCoordinator : IDisposable
                 return false;
             }
 
-            state = new OperationState(taskId, workload ?? ConversionWorkload.Unspecified);
+            state = new OperationState(demand);
             _operations.Add(state);
             _executingOperations.Add(taskId, state);
             _removeAfterOperation.Remove(taskId);
             _batchWasStarted = true;
-            _admissionQueue.Add(state);
-            AdmitWaitingOperations();
+            state.PendingNode = _admissionQueue.AddLast(state);
+            if (_admissionQueue.Count == 1) AdmitWaitingOperations();
         }
 
         var runner = RunTrackedOperationAsync(
@@ -235,6 +259,7 @@ public sealed class ConversionQueueCoordinator : IDisposable
         lock (_syncRoot)
         {
             _executingOperations.TryGetValue(taskId, out state);
+            if (state is not null) MarkCancellationPending(state);
         }
 
         state?.Cancel(CancellationRequest.TaskCancel);
@@ -252,13 +277,10 @@ public sealed class ConversionQueueCoordinator : IDisposable
         {
             if (_disposed || !_executingOperations.TryGetValue(taskId, out state!) ||
                 state.IsAdmitted || state.IsCancellationPending || state.Token.IsCancellationRequested) return false;
-            state.IsCancellationPending = true;
-            _admissionQueue.Remove(state);
+            MarkCancellationPending(state);
         }
 
-        // Cancellation invokes callbacks. Do not take the state's cancellation
-        // lock while holding the scheduler lock: a concurrent Cancel may already
-        // hold that lock and be calling back into the scheduler.
+        // Unlinking and cancellation intent are visible before callbacks run.
         state.Cancel(CancellationRequest.WaitingCancel);
         await state.Completion.ConfigureAwait(false);
         return true;
@@ -275,6 +297,7 @@ public sealed class ConversionQueueCoordinator : IDisposable
             }
 
             _removeAfterOperation.Add(taskId);
+            MarkCancellationPending(state);
         }
 
         state.Cancel(CancellationRequest.Removal);
@@ -289,6 +312,7 @@ public sealed class ConversionQueueCoordinator : IDisposable
         lock (_syncRoot)
         {
             states = [.. _executingOperations.Values];
+            foreach (var state in states) MarkCancellationPending(state);
         }
 
         foreach (var state in states)
@@ -352,6 +376,7 @@ public sealed class ConversionQueueCoordinator : IDisposable
             _admissionTimer?.Dispose();
             _admissionTimer = null;
             states = [.. _operations];
+            foreach (var state in states) MarkCancellationPending(state);
         }
 
         foreach (var state in states)
@@ -552,43 +577,68 @@ public sealed class ConversionQueueCoordinator : IDisposable
     {
         lock (_syncRoot)
         {
-            _runningCount--;
+
             _runningOperations.Remove(state);
             AdmitWaitingOperations();
         }
     }
 
-    // Called under _syncRoot. Lower limits leave running jobs intact; only admission changes.
+    private void RemovePending(OperationState state)
+    {
+        if (state.PendingNode is not { } node) return;
+        _admissionQueue.Remove(node);
+        state.PendingNode = null;
+    }
+
+    // Mark and unlink under the slot lock before invoking user cancellation callbacks outside it.
+    private void MarkCancellationPending(OperationState state)
+    {
+        state.IsCancellationPending = true;
+        RemovePending(state);
+    }
+
     private void AdmitWaitingOperations()
     {
-        ConversionResourceSnapshot resources;
-        try { resources = _resourceSnapshot(); }
-        catch { resources = ConversionResourceSnapshot.Unknown; }
-        while (_admissionQueue.Count > 0)
+        if (_disposed || !_acceptingOperations || _orderPublicationsInProgress != 0) return;
+        if (_admissionQueue.Count != 0 && _runningOperations.Count < _desiredParallelism)
         {
-            var next = _admissionQueue[0];
-            if (next.Admission.Task.IsCompleted) { _admissionQueue.RemoveAt(0); continue; }
-            if (next.Token.IsCancellationRequested)
+            ConversionResourceSnapshot resources;
+            try { resources = _resourceSnapshot(); }
+            catch { resources = ConversionResourceSnapshot.Unknown; }
+
+            // At most four operations can be granted. Later FIFO entries cannot
+            // participate until one of these starts or is removed. This keeps ordinary
+            // slot releases bounded even for queues with many thousands of rows.
+            try
             {
-                next.Admission.TrySetCanceled(next.Token);
-                _admissionQueue.RemoveAt(0);
-                continue;
+                var decision = ConversionScheduler.Schedule(_admissionQueue.Take(MaximumParallelism).Select(state => state.Demand),
+                    _runningOperations.Select(state => state.Reservation!), _desiredParallelism, resources);
+                if (!decision.Accepted || decision.Grants.Length > _desiredParallelism - _runningOperations.Count ||
+                    decision.Grants.Select(g => g.Id).Distinct().Count() != decision.Grants.Length ||
+                    decision.Grants.Any(g => !_executingOperations.TryGetValue(g.Id, out var state) || state.PendingNode is null))
+                    throw new InvalidDataException("Unexpected scheduler admission.");
+                foreach (var grant in decision.Grants)
+                {
+                    var state = _executingOperations[grant.Id];
+                    RemovePending(state);
+                    state.Reservation = grant.Cost;
+                    state.IsAdmitted = true;
+                    _runningOperations.Add(state);
+                    state.Admission.TrySetResult(true);
+                }
             }
-            if (_disposed || !_acceptingOperations || _orderPublicationsInProgress > 0 || _runningCount >= _desiredParallelism) break;
-            var running = _runningOperations.Select(state => state.Workload).ToArray();
-            if (!ConversionAdmissionPolicy.CanAdmit(next.Workload, running, _desiredParallelism, resources)) break;
-            _admissionQueue.RemoveAt(0);
-            if (next.Admission.TrySetResult(true))
+            catch (Exception failure)
             {
-                next.IsAdmitted = true;
-                _runningOperations.Add(next);
-                _runningCount++;
+                // A failed worker cannot authorize execution. Resolve every waiter
+                // exactly once through the usual completion/error callback.
+                while (_admissionQueue.First is { Value: var state })
+                {
+                    RemovePending(state);
+                    state.Admission.TrySetException(failure);
+                }
             }
         }
-        // Pressure can ease before the current job finishes. Poll only while there
-        // are pending jobs and a running operation; no UI thread or task is blocked.
-        if (!_disposed && _acceptingOperations && _admissionQueue.Count > 0 &&
-            _runningCount > 0 && _runningCount < _desiredParallelism)
+        if (_admissionQueue.Count > 0 && _runningOperations.Count > 0 && _runningOperations.Count < _desiredParallelism)
         {
             _admissionTimer ??= new Timer(_ => RecheckAdmission());
             _admissionTimer.Change(TimeSpan.FromSeconds(2), Timeout.InfiniteTimeSpan);

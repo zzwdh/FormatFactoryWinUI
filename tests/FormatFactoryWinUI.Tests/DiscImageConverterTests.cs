@@ -29,6 +29,68 @@ public sealed class DiscImageConverterTests
     }
 
     [Fact]
+    public async Task RustAndManagedCodecsCanReadEachOthersOutput()
+    {
+        using var directory = new TemporaryDirectory();
+        var source = Path.Combine(directory.Path, "cross source.iso");
+        var managedCso = Path.Combine(directory.Path, "旧写入.cso");
+        var rustCso = Path.Combine(directory.Path, "新写入.cso");
+        var restored = Path.Combine(directory.Path, "restored.iso");
+        var content = CreateMixedContent();
+        await File.WriteAllBytesAsync(source, content);
+
+        var converter = new DiscImageConverter();
+        await CsoImageCodec.WriteAsync(source, managedCso, CsoImageCodec.DefaultBlockSize, null, CancellationToken.None);
+        await converter.ConvertCsoToIsoAsync(managedCso, restored);
+        Assert.Equal(content, await File.ReadAllBytesAsync(restored));
+
+        await converter.ConvertIsoToCsoAsync(source, rustCso);
+        await using var input = File.OpenRead(rustCso);
+        var layout = await CsoImageCodec.ReadLayoutAsync(input, CancellationToken.None);
+        using var decoded = new MemoryStream();
+        await CsoImageCodec.DecodeAsync(input, decoded, layout, null, CancellationToken.None);
+        Assert.Equal(content, decoded.ToArray());
+    }
+
+    [Theory]
+    [InlineData(DiscImageFormat.Iso, DiscImageFormat.Cso)]
+    [InlineData(DiscImageFormat.Cso, DiscImageFormat.Iso)]
+    public async Task MissingWorkerReportsFailureAndLeavesNoPartialOutput(DiscImageFormat from, DiscImageFormat to)
+    {
+        using var directory = new TemporaryDirectory();
+        var input = Path.Combine(directory.Path, "source");
+        var output = Path.Combine(directory.Path, "result");
+        await File.WriteAllBytesAsync(input, from == DiscImageFormat.Iso
+            ? CreateMixedContent() : CreateLegacyCso(plainPartialBlock: true).Cso);
+        var missingWorker = Path.Combine(directory.Path, ConversionWorkerProcess.FileName);
+        var error = await Assert.ThrowsAsync<FileNotFoundException>(() =>
+            new DiscImageConverter(missingWorker).ConvertAsync(input, from, output, to));
+
+        Assert.Equal(missingWorker, error.FileName);
+        Assert.False(File.Exists(output));
+        Assert.Empty(Directory.EnumerateFiles(directory.Path, "*.tmp"));
+    }
+
+    [Fact]
+    public async Task ConcurrentDestinationCreationPreservesExistingFileAndRemovesStaging()
+    {
+        using var directory = new TemporaryDirectory();
+        var input = Path.Combine(directory.Path, "source.iso");
+        var output = Path.Combine(directory.Path, "result.cso");
+        await File.WriteAllBytesAsync(input, CreateMixedContent());
+        var competingContent = "concurrent content"u8.ToArray();
+        var progress = new InlineProgress<DiscImageConversionProgress>(value =>
+        {
+            if (value.ProcessedBlocks == 0) File.WriteAllBytes(output, competingContent);
+        });
+
+        await Assert.ThrowsAnyAsync<IOException>(() =>
+            new DiscImageConverter().ConvertIsoToCsoAsync(input, output, progress));
+        Assert.Equal(competingContent, await File.ReadAllBytesAsync(output));
+        Assert.Empty(Directory.EnumerateFiles(directory.Path, "*.tmp"));
+    }
+
+    [Fact]
     public async Task IsoToCso_MarksIncompressibleBlocksAsPlain()
     {
         using var directory = new TemporaryDirectory();
@@ -140,6 +202,9 @@ public sealed class DiscImageConverterTests
             new DiscImageConverter().ConvertCsoToIsoAsync(cso, restored));
 
         Assert.Equal(LocalizationService.T("ConversionUiCsoBlockExpandsBeyondDeclaredSize", 2), error.Message);
+        var diagnostic = FormatFailureDiagnostics.Format(error);
+        Assert.Contains("stage=CsoDecode reason=DecodedSize", diagnostic);
+        Assert.Contains("index=2", diagnostic);
         Assert.False(File.Exists(restored));
         Assert.Equal(bytes, await File.ReadAllBytesAsync(cso));
         Assert.Empty(Directory.EnumerateFiles(directory.Path, "*.tmp"));

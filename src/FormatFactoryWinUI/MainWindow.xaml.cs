@@ -274,6 +274,7 @@ public sealed partial class MainWindow : Window
         {
             RootGrid.Language = LocalizationService.CurrentUICulture.Name;
             RootGrid.FlowDirection = LocalizationService.IsRightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
+            UpdateNavigationTitleBar();
             Title = LocalizationService.T("AppTitle");
             _trayIcon?.RefreshLocalization();
             NavAllItem.Content = LocalizationService.T("NavAll");

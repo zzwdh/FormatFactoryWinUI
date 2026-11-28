@@ -106,6 +106,7 @@ WINDOWS_APP_SDK_REFERENCES
     <Compile Include="REPO_ROOT/tests/WinUiSmoke/QueueExperienceSmoke.cs" />
     <Compile Include="REPO_ROOT/tests/WinUiSmoke/NavigationMotionSmoke.cs" />
     <Compile Include="REPO_ROOT/tests/WinUiSmoke/QueueDensitySmoke.cs" />
+    <Compile Include="REPO_ROOT/tests/WinUiSmoke/QueueScrollBoundarySmoke.cs" />
     <Compile Include="REPO_ROOT/tests/WinUiSmoke/ProgressStateColorSmoke.cs" />
     <ApplicationDefinition Include="HOST_SOURCE/App.xaml" Link="App.xaml" />
     <Page Include="WINDOW_SOURCE/MainWindow.xaml" Link="MainWindow.xaml" />
@@ -115,6 +116,7 @@ WINDOWS_APP_SDK_REFERENCES
     <Content Include="HOST_SOURCE/Assets/*" Link="Assets/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="HOST_SOURCE/feedback-config.json" Link="feedback-config.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <Import Project="REPO_ROOT/build/ConversionWorker.targets" />
 </Project>
 '@
 $project = $project.Replace('HOST_SOURCE', (& $xmlEscape $hostSource)).Replace('WINDOW_SOURCE', (& $xmlEscape $windowSource)).Replace('WINDOW_SETTINGS_SOURCE', (& $xmlEscape $windowSettingsSource)).Replace('WINDOW_MOTION_SOURCE', (& $xmlEscape $windowMotionSource)).Replace('REPO_ROOT', (& $xmlEscape $repoRoot)).Replace('WINDOWS_APP_SDK_REFERENCES', $sdkReferenceXml)

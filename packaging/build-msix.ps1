@@ -17,6 +17,7 @@ $repoRoot = Split-Path $PSScriptRoot -Parent
 $metadataScript = Join-Path $repoRoot "build\RepositoryMetadata.ps1"
 $validationScript = Join-Path $repoRoot "build\validate-repository.ps1"
 . $metadataScript
+. (Join-Path $repoRoot 'build/PackageScratch.ps1')
 . (Join-Path $PSScriptRoot "EnginePackaging.ps1")
 . (Join-Path $PSScriptRoot "ApplicationManifest.ps1")
 . (Join-Path $repoRoot 'build/Toolchain.ps1')
@@ -26,42 +27,19 @@ $projectPath = Join-Path $repoRoot "src\FormatFactoryWinUI\FormatFactoryWinUI.cs
 $templatePath = Join-Path $PSScriptRoot "AppxManifest.xml.template"
 $runtimeIdentifier = "win-$Architecture"
 $workRoot = Join-Path $repoRoot "work"
-$publishDirectory = Join-Path $workRoot "publish-msix-$Architecture"
-$stagingDirectory = Join-Path $workRoot "msix-staging-$Architecture"
-$shellPublishDirectory = Join-Path $workRoot "publish-shell-msix-$Architecture"
 $requiredApplicationLibraries = @(
     "FormatFactory.Core.dll",
     "FormatFactory.Engine.dll",
     "FormatFactory.Documents.dll",
     "FormatFactory.Presentation.dll"
+    "FormatFactory.ConversionWorker.exe"
+    "FormatFactory.ConversionWorker.licenses.zip"
     "FormatFactory.FilterWorker.exe",
     "FormatFactory.FilterWorker.dll",
     "FormatFactory.FilterWorker.deps.json",
     "FormatFactory.FilterWorker.runtimeconfig.json"
 )
-$requiredShellFiles = @('FormatFactoryShellExtension.Native.dll','native-shell-build.json','miniz.LICENSE.txt')
-
-function Reset-BuildDirectory {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Path,
-        [Parameter(Mandatory)]
-        [string]$AllowedRoot
-    )
-
-    $resolvedPath = [IO.Path]::GetFullPath($Path)
-    $resolvedRoot = [IO.Path]::GetFullPath($AllowedRoot)
-    $trimCharacters = [char[]]@([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
-    $rootPrefix = $resolvedRoot.TrimEnd($trimCharacters) + [IO.Path]::DirectorySeparatorChar
-    if (-not $resolvedPath.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "拒绝清理工作区外目录：$resolvedPath"
-    }
-
-    if (Test-Path -LiteralPath $resolvedPath) {
-        Remove-Item -LiteralPath $resolvedPath -Recurse -Force
-    }
-    New-Item -ItemType Directory -Force -Path $resolvedPath | Out-Null
-}
+$requiredShellFiles = @('FormatFactoryShellExtension.Native.dll','native-shell-build.json','FormatFactoryShellExtension.Native.licenses.zip')
 
 function Assert-RequiredFiles {
     param(
@@ -159,13 +137,17 @@ if ($config.Publisher -eq "CN=Format Factory") {
     Write-Warning "当前 Publisher 是本地测试值。上传 Microsoft Store 前，请替换为 Partner Center 分配的 Publisher。"
 }
 
+$OutputDirectory = Resolve-PackageOutputDirectory $OutputDirectory
+$isStoreChild = $MyInvocation.ScriptName -eq (Join-Path $PSScriptRoot 'build-store-msix.ps1')
+$scratch = if ($isStoreChild) { $storePackageScratch } else { New-PackageScratchDirectory }
+$publishDirectory = Join-Path $scratch.FullName "publish-msix-$Architecture"
+$stagingDirectory = Join-Path $scratch.FullName "msix-staging-$Architecture"
+$shellPublishDirectory = Join-Path $scratch.FullName "publish-shell-msix-$Architecture"
 & (Join-Path $PSScriptRoot 'prepare-engines.ps1') -Architecture $Architecture -Offline:$OfflineEngines
 $preparedEngines = Join-Path $workRoot "prepared-engines/$Architecture/Engines"
 [void](Assert-EngineReceipt -EngineRoot $preparedEngines -Architecture $Architecture -Fingerprint (Get-EnginePreparationFingerprint -PackagingDirectory $PSScriptRoot))
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
-Reset-BuildDirectory -Path $publishDirectory -AllowedRoot $workRoot
-Reset-BuildDirectory -Path $stagingDirectory -AllowedRoot $workRoot
-Reset-BuildDirectory -Path $shellPublishDirectory -AllowedRoot $workRoot
+New-Item -ItemType Directory -Path $publishDirectory, $stagingDirectory, $shellPublishDirectory | Out-Null
 
 $mainPublishArguments = @(
     "publish", $projectPath,
@@ -188,7 +170,7 @@ if ($LASTEXITCODE -ne 0) {
 Assert-RequiredFiles -Directory $publishDirectory -Names $requiredApplicationLibraries -Label "Application modules and isolated worker publish"
 
 & (Join-Path $repoRoot 'src/FormatFactoryShellExtension.Native/build.ps1') -Architecture $Architecture -Configuration Release -OutputDirectory $shellPublishDirectory -RunTests
-Copy-Item -LiteralPath (Join-Path $repoRoot 'src/FormatFactoryShellExtension.Native/vendor/miniz/LICENSE') -Destination (Join-Path $shellPublishDirectory 'miniz.LICENSE.txt')
+
 Assert-RequiredFiles -Directory $shellPublishDirectory -Names $requiredShellFiles -Label 'C++ Shell publish'
 foreach ($shellFile in $requiredShellFiles) {
     Copy-Item -LiteralPath (Join-Path $shellPublishDirectory $shellFile) -Destination $publishDirectory -Force
@@ -237,4 +219,7 @@ Assert-MsixEnginePayload -PackagePath $packagePath -EngineRoot $stagedEngines -A
 Write-Host "MSIX 已生成：$packagePath"
 if ([string]::IsNullOrWhiteSpace($CertificatePath)) {
     Write-Warning "该包未签名，仅适合提交前检查；本机安装测试需要使用与 Publisher 匹配的证书签名。"
+}
+if (-not $isStoreChild) {
+    & (Join-Path $repoRoot 'build/Write-PackageCompletion.ps1') -RunId $scratch.Name -Version $releaseVersion -OutputDirectory $OutputDirectory -Kind "msix-$Architecture"
 }

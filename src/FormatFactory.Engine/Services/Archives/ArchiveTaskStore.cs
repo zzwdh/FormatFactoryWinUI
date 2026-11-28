@@ -50,22 +50,9 @@ public sealed class ArchiveTaskStore : IArchiveTaskPersistence
         try
         {
             // A corrupt or future-version file must remain available for recovery.
+            using var transaction = await StoreTransaction.OpenAsync(_path, token, direct: true).ConfigureAwait(false);
             _ = await LoadCoreAsync(token).ConfigureAwait(false);
-            Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-            var temporaryPath = $"{_path}.{Guid.NewGuid():N}.tmp";
-            try
-            {
-                await using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write,
-                    FileShare.None, 4096, FileOptions.Asynchronous | FileOptions.WriteThrough))
-                {
-                    await JsonSerializer.SerializeAsync(stream, snapshot, JsonOptions, token).ConfigureAwait(false);
-                    await stream.FlushAsync(token).ConfigureAwait(false);
-                    stream.Flush(flushToDisk: true);
-                }
-                token.ThrowIfCancellationRequested();
-                File.Move(temporaryPath, _path, overwrite: true);
-            }
-            finally { if (File.Exists(temporaryPath)) File.Delete(temporaryPath); }
+            await transaction.PublishAsync(snapshot, JsonOptions, token).ConfigureAwait(false);
         }
         finally { _gate.Release(); }
     }

@@ -67,7 +67,7 @@ public sealed class MediaProbeService
         }
 
         MediaProbeResult probe;
-        try { probe = MediaProbeParser.Parse(result.StandardOutput, inputPath); }
+        try { probe = await MediaProbeParser.ParseAsync(result.StandardOutput, inputPath, cancellationToken); }
         catch (Exception exception) when (MediaProbeFailureDetails.CanDescribe(exception))
         {
             await RecordFailureAsync(exception, MediaProbeFailureStep.Parse, result, started, ffprobePath, inputPath, cancellationToken);
@@ -136,13 +136,10 @@ public sealed class MediaProbeService
         {
             try
             {
-                var output = ImageAnimationInfoReader.Read(outputPath, cancellationToken);
+                var webp = task.TargetFormatId == "webp";
+                var output = await ImageAnimationInfoReader.ReadAsync(outputPath, verifyWebp: webp, cancellationToken);
                 if (!sourceAnimation.Matches(output, task.ConversionMode == "lossless")) return false;
-                // FFprobe can report an image stream without decoding its frame payload.
-                // Animated WebP decoders may expose only the first image, so decode each
-                // ANMF image independently before accepting the whole animation.
-                if (task.TargetFormatId == "webp")
-                    return await ImageAnimationInfoReader.ValidateWebpFramesAsync(outputPath, ffmpegPath ?? string.Empty, cancellationToken);
+                if (webp) return true;
                 if (string.IsNullOrWhiteSpace(ffmpegPath) || !File.Exists(ffmpegPath)) return false;
                 var decoded = await ProcessRunner.RunAsync(ffmpegPath,
                     ["-v", "error", "-nostdin", "-xerror", "-err_detect", "explode", "-i", outputPath, "-map", "0:V:0", "-f", "null", "-"],
@@ -160,7 +157,7 @@ public sealed class MediaProbeService
             try
             {
                 var output = await ProbeAsync(ffprobePath, outputPath, cancellationToken);
-                if (!ValidateCompatibleAudioOutput(task, output)) return false;
+                if (!await ValidateCompatibleAudioOutputAsync(task, output, cancellationToken)) return false;
             }
             catch (OperationCanceledException) { throw; }
             catch { return false; }
@@ -169,10 +166,12 @@ public sealed class MediaProbeService
         try
         {
             var output = await ProbeAsync(ffprobePath, outputPath, cancellationToken);
-            if ((task.Probe.Width > 0 && output.Width != task.Probe.Width) ||
-                (task.Probe.Height > 0 && output.Height != task.Probe.Height) ||
-                ImagePreservationPolicy.PixelBitDepth(output.PixelFormat) < ImagePreservationPolicy.PixelBitDepth(task.Probe.PixelFormat) ||
-                TiffPageCountReader.Read(outputPath, cancellationToken) > 1 || string.IsNullOrWhiteSpace(ffmpegPath)) return false;
+            if (string.IsNullOrWhiteSpace(ffmpegPath) || !await ConversionBackend.RequestAsync<bool>("media-plan", new
+            {
+                action = "validate", check = "losslessImage", sourceWidth = task.Probe.Width, sourceHeight = task.Probe.Height,
+                width = output.Width, height = output.Height, sourceDepth = ImagePreservationPolicy.PixelBitDepth(task.Probe.PixelFormat),
+                depth = ImagePreservationPolicy.PixelBitDepth(output.PixelFormat), pages = await TiffPageCountReader.ReadAsync(outputPath, cancellationToken) ?? 0
+            }, cancellationToken)) return false;
             var sourcePixels = await ReadImagePixelHashAsync(ffmpegPath, task.InputPath, cancellationToken);
             var outputPixels = await ReadImagePixelHashAsync(ffmpegPath, outputPath, cancellationToken);
             return sourcePixels == outputPixels;
@@ -181,15 +180,17 @@ public sealed class MediaProbeService
         catch { return false; }
     }
 
-    internal static bool ValidateCompatibleAudioOutput(MediaTask task, MediaProbeResult output)
-    {
-        var expectedChannels = MediaConversionOptions.FromTask(task).Channels ?? 2;
-        if (!CompatibleAudioTrackPolicy.IsSupportedOutput(task) || output.AudioTracks.Count != 1 ||
-            output.AudioTracks[0].Channels != expectedChannels ||
-            string.Equals(output.AudioTracks[0].Codec, "apple_apac", StringComparison.OrdinalIgnoreCase)) return false;
-        var hasVideo = output.VideoStreamIndex >= 0 || !string.IsNullOrWhiteSpace(output.VideoCodec);
-        return FormatCatalog.IsAudioFormat(task.TargetFormat) ? !hasVideo : hasVideo;
-    }
+    internal static bool ValidateCompatibleAudioOutput(MediaTask task, MediaProbeResult output) =>
+        ValidateCompatibleAudioOutputAsync(task, output, CancellationToken.None).GetAwaiter().GetResult();
+
+    private static Task<bool> ValidateCompatibleAudioOutputAsync(MediaTask task, MediaProbeResult output, CancellationToken token) =>
+        ConversionBackend.RequestAsync<bool>("media-plan", new
+        {
+            action = "validate", check = "compatibleAudio", supported = CompatibleAudioTrackPolicy.IsSupportedOutput(task),
+            expectedChannels = MediaConversionOptions.FromTask(task).Channels ?? 2, audioOutput = FormatCatalog.IsAudioFormat(task.TargetFormat),
+            hasVideo = output.VideoStreamIndex >= 0 || !string.IsNullOrWhiteSpace(output.VideoCodec),
+            tracks = output.AudioTracks.Select(t => new { channels = t.Channels, codec = t.Codec })
+        }, token);
 
     private static async Task<string> ReadImagePixelHashAsync(string ffmpegPath, string path, CancellationToken cancellationToken)
     {

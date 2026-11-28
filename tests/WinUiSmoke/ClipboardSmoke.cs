@@ -43,10 +43,10 @@ public partial class App
         {
             var package = new DataPackage();
             AdvertiseUnavailableClipboardFormat(package, StandardDataFormats.Text);
-            package.SetHtmlFormat(HtmlFormatHelper.CreateHtmlFormat("<p>synthetic html clipboard content</p>"));
+            package.SetHtmlFormat(HtmlFormatHelper.CreateHtmlFormat("<p>合成 <b>HTML</b> &amp; Unicode 文本</p>"));
             var imports = Path.Combine(fixtureRoot, "text-fallback");
             var paths = await ClipboardService.ReadSupportedFilePathsAsync(package.GetView(), imports).WaitAsync(TimeSpan.FromSeconds(5));
-            RequireClipboardDocument(paths, imports, "synthetic html clipboard content");
+            RequireClipboardDocument(paths, imports, "合成 HTML & Unicode 文本");
         });
 
         await CheckAsync("Unavailable clipboard HTML representation falls back to an available RTF document", async () =>

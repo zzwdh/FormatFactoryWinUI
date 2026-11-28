@@ -36,7 +36,7 @@ public sealed class QueueStore : IQueuePersistence
     private readonly string _lockPath;
     private readonly Func<IReadOnlyList<PersistedQueueItem>> _checkpointLoader;
     private readonly Func<string, Stream> _openRead;
-    private readonly HashSet<string> _knownPersistedPaths = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<Guid> _knownPersistedPaths = [];
     private readonly object _saveSync = new();
     private PendingSave? _pendingSave;
     private bool _saveWriterRunning;
@@ -132,19 +132,13 @@ public sealed class QueueStore : IQueuePersistence
         try
         {
             if (_writesBlocked) throw new InvalidOperationException(LocalizationService.T("ConversionUiQueueSaveUnavailable"));
-            await using var fileLock = await AcquireFileLockAsync(cancellationToken);
+            using var transaction = await StoreTransaction.OpenAsync(_path, cancellationToken).ConfigureAwait(false);
             var current = await LoadCoreAsync(cancellationToken);
-            var externalAdditions = _baselineInitialized
-                ? current.Where(item => !_knownPersistedPaths.Contains(PersistenceKey(item)))
-                : current;
-            var merged = incoming
-                .Concat(externalAdditions)
-                .GroupBy(PersistenceKey, StringComparer.OrdinalIgnoreCase)
-                .Select(group => group.First())
-                .ToArray();
-
+            var merged = await transaction.SelectAsync("snapshot", current, incoming,
+                item => transaction.Identify(item.TaskId, string.Empty), _baselineInitialized ? _knownPersistedPaths : [],
+                cancellationToken).ConfigureAwait(false);
             RecoveryService.UpdateCheckpoint(merged);
-            await WriteItemsAsync(merged, cancellationToken);
+            await PublishAsync(transaction, merged, cancellationToken).ConfigureAwait(false);
             RecoveryService.ClearCheckpoint();
             ReplaceKnownPaths(incoming);
             _baselineInitialized = true;
@@ -228,19 +222,12 @@ public sealed class QueueStore : IQueuePersistence
         try
         {
             if (_writesBlocked) throw new InvalidOperationException(LocalizationService.T("ConversionUiQueueSaveUnavailable"));
-            await using var fileLock = await AcquireFileLockAsync(cancellationToken);
+            using var transaction = await StoreTransaction.OpenAsync(_path, cancellationToken).ConfigureAwait(false);
             var current = await LoadCoreAsync(cancellationToken);
-            // Background discovery is idempotent by ordered source paths. It must
-            // not collapse explicitly authored jobs with distinct IDs/parameters.
-            var merged = current.ToList();
-            foreach (var addition in pending)
-            {
-                var identity = merged.FindIndex(item => item.TaskId == addition.TaskId);
-                if (identity >= 0) { merged[identity] = addition; continue; }
-                if (addition.OutputGroupId is null && merged.Any(item => SourcePathKey(item).Equals(SourcePathKey(addition), StringComparison.OrdinalIgnoreCase))) continue;
-                merged.Add(addition);
-            }
-            await WriteItemsAsync(merged, cancellationToken);
+            var merged = await transaction.SelectAsync("discover", current, pending,
+                item => transaction.Identify(item.TaskId, SourcePathKey(item), item.OutputGroupId is not null),
+                [], cancellationToken).ConfigureAwait(false);
+            await PublishAsync(transaction, merged, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -290,66 +277,18 @@ public sealed class QueueStore : IQueuePersistence
         return items.Select(MigrateItem).ToArray();
     }
 
-    private async Task WriteItemsAsync(
-        IReadOnlyCollection<PersistedQueueItem> items,
-        CancellationToken cancellationToken)
+    private static async Task PublishAsync(StoreTransaction transaction, PersistedQueueItem[] items, CancellationToken token)
     {
-        try { Directory.CreateDirectory(Path.GetDirectoryName(_path)!); }
-        catch (Exception error) when (error is not OperationCanceledException)
-        {
-            PersistenceFailureDiagnostics.Record(error, DiagnosticStore.Queue, DiagnosticPersistenceStage.CreateDirectory);
-            throw;
-        }
-        if (items.Count == 0)
-        {
-            if (File.Exists(_path))
-            {
-                File.Delete(_path);
-            }
-            return;
-        }
-
-        var temporaryPath = $"{_path}.{Guid.NewGuid():N}.tmp";
-        var diagnosticStage = DiagnosticPersistenceStage.WriteSnapshot;
         try
         {
-            await using (var stream = new FileStream(
-                temporaryPath,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                4096,
-                FileOptions.Asynchronous | FileOptions.WriteThrough))
-            {
-                await JsonSerializer.SerializeAsync(
-                    stream,
-                    new PersistedQueueDocument { SchemaVersion = CurrentSchemaVersion, Items = items.ToArray() },
-                    SerializerOptions,
-                    cancellationToken);
-                await stream.FlushAsync(cancellationToken);
-                stream.Flush(flushToDisk: true);
-            }
-            diagnosticStage = DiagnosticPersistenceStage.CommitSnapshot;
-            File.Move(temporaryPath, _path, true);
+            await transaction.PublishAsync(items.Length == 0 ? null :
+                new PersistedQueueDocument { SchemaVersion = CurrentSchemaVersion, Items = items },
+                SerializerOptions, token).ConfigureAwait(false);
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
-            PersistenceFailureDiagnostics.Record(error, DiagnosticStore.Queue, diagnosticStage);
+            PersistenceFailureDiagnostics.Record(error, DiagnosticStore.Queue, DiagnosticPersistenceStage.CommitSnapshot);
             throw;
-        }
-        finally
-        {
-            try
-            {
-                if (File.Exists(temporaryPath))
-                {
-                    File.Delete(temporaryPath);
-                }
-            }
-            catch
-            {
-                // 原子替换已完成时，临时文件清理失败不应覆盖队列结果。
-            }
         }
     }
 
@@ -383,7 +322,7 @@ public sealed class QueueStore : IQueuePersistence
         _knownPersistedPaths.Clear();
         foreach (var item in items)
         {
-            _knownPersistedPaths.Add(PersistenceKey(item));
+            _knownPersistedPaths.Add(item.TaskId);
         }
     }
 
@@ -398,9 +337,6 @@ public sealed class QueueStore : IQueuePersistence
             return path.Trim();
         }
     }
-
-    private static string PersistenceKey(PersistedQueueItem item)
-        => item.TaskId.ToString("N");
 
     private static string SourcePathKey(PersistedQueueItem item)
     {

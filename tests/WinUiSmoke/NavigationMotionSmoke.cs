@@ -116,11 +116,8 @@ public partial class App
                 {
                     root.UpdateLayout();
                     Invoke("UpdateNavigationTitleBar");
-                    var header = (Grid)Field("AppTitleBar")!;
-                    var bar = _window.AppWindow.TitleBar;
-                    var scale = root.XamlRoot?.RasterizationScale ?? 1;
-                    Require(header.Margin.Left == bar.LeftInset / scale && header.Margin.Right == bar.RightInset / scale,
-                        "The app header did not reserve space for the Windows caption buttons.");
+                    root.UpdateLayout();
+                    RequireNavigationCaptionClearance("Windows 10");
                     return;
                 }
 
@@ -158,6 +155,26 @@ public partial class App
                     root.RequestedTheme = previousTheme;
                     FluentMotion.SetWindowActive(previousWindowActive);
                     Invoke("UpdateNavigationTitleBar");
+                }
+            });
+
+            await CheckAsync("Language switches and resizing keep the navigation toggle outside native caption buttons", async () =>
+            {
+                if (!_window!.ExtendsContentIntoTitleBar) return;
+                foreach (var width in new[] { 1280, 720 })
+                {
+                    ResizeForCapture(width, 900);
+                    await Task.Delay(100);
+                    foreach (var language in new[] { "en-US", "ar-SA", "he-IL", "en-US" })
+                    {
+                        LocalizationService.SetLanguage(language);
+                        Invoke("ApplyLocalization");
+                        root.UpdateLayout();
+                        // No direct title-bar refresh: the real localization/resize
+                        // handlers must reserve the current native caption area.
+                        await YieldLayoutAsync();
+                        RequireNavigationCaptionClearance($"{language}, width={root.ActualWidth:0.##}");
+                    }
                 }
             });
 
@@ -339,6 +356,20 @@ public partial class App
             SelectNavigation("all");
             await AwaitNavigationAsync();
         }
+    }
+
+    private void RequireNavigationCaptionClearance(string context)
+    {
+        var toggle = (ToggleButton)Field("NavigationToggleButton")!;
+        var bounds = new ToggleButtonAutomationPeer(toggle).GetBoundingRectangle();
+        var window = _window!.AppWindow;
+        var safeLeft = window.TitleBar.LeftInset;
+        var safeRight = window.ClientSize.Width - window.TitleBar.RightInset;
+        Require(bounds.Width > 0 && bounds.Height > 0,
+            $"{context}: the navigation toggle has no visible automation bounds.");
+        // In-process WinUI peer bounds use client pixels, as do the native insets.
+        Require(bounds.Left >= safeLeft - 2 && bounds.Right <= safeRight + 2,
+            $"{context}: navigation [{bounds.Left:0.##}, {bounds.Right:0.##}] overlaps caption-reserved space; safe=[{safeLeft}, {safeRight}].");
     }
 
     private NavigationViewItem FindNavigationItem(string tag)

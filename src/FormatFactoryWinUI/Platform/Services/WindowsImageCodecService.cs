@@ -69,7 +69,7 @@ public sealed class WindowsImageCodecService : IImageCodecService
                 },
                 // TIFF pages are not animation. Animated sources stay on the existing FFmpeg route.
                 IsAnimated = decoder.FrameCount > 1 && format?.Id is "gif" or "webp" or "png" or "avif" ||
-                    ImageAnimationDetector.HasAnimation(path),
+                    await ImageAnimationDetector.HasAnimationAsync(path, cancellationToken),
                 Metadata = new Dictionary<string, string>
                 {
                     ["imageDecoder"] = decoder.DecoderInformation.FriendlyName,
@@ -102,7 +102,7 @@ public sealed class WindowsImageCodecService : IImageCodecService
         if (decoder.FrameCount > 1 && target != "tiff")
             throw new NotSupportedException(LocalizationService.T("NativeImageMultiplePages"));
         if (decoder.FrameCount > 1 && FormatCatalog.FindByExtension(inputPath)?.Id is "gif" or "webp" or "png" or "avif" ||
-            ImageAnimationDetector.HasAnimation(inputPath))
+            await ImageAnimationDetector.HasAnimationAsync(inputPath, cancellationToken))
             throw new NotSupportedException(LocalizationService.T("NativeImageAnimationFallback"));
         await using var output = new FileStream(outputPath, FileMode.CreateNew, FileAccess.ReadWrite,
             FileShare.None, 81920, FileOptions.Asynchronous);

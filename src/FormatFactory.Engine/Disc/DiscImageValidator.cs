@@ -35,12 +35,12 @@ public sealed class DiscImageValidator
                 throw new InvalidDataException(LocalizationService.T("ConversionUiIsoImageEmpty"));
             }
 
-            var blockCount = ((input.Length - 1L) / CsoImageCodec.DefaultBlockSize) + 1L;
+            var blockCount = ((input.Length - 1L) / DiscImageWorker.DefaultBlockSize) + 1L;
             return new DiscImageValidationResult(
                 true,
                 DiscImageFormat.Iso,
                 input.Length,
-                CsoImageCodec.DefaultBlockSize,
+                DiscImageWorker.DefaultBlockSize,
                 checked((int)Math.Min(int.MaxValue, blockCount)));
         }
         catch (Exception exception) when (IsValidationFailure(exception))
@@ -64,14 +64,7 @@ public sealed class DiscImageValidator
                 FileShare.Read,
                 128 * 1024,
                 FileOptions.Asynchronous | FileOptions.RandomAccess);
-            var layout = await CsoImageCodec.ReadLayoutAsync(input, cancellationToken);
-            await CsoImageCodec.DecodeAsync(input, Stream.Null, layout, progress: null, cancellationToken);
-            return new DiscImageValidationResult(
-                true,
-                DiscImageFormat.Cso,
-                layout.TotalBytes,
-                layout.BlockSize,
-                layout.BlockCount);
+            return await new DiscImageWorker(ConversionWorkerProcess.ExecutablePath).CheckAsync(input, verify: true, cancellationToken);
         }
         catch (Exception exception) when (IsValidationFailure(exception))
         {

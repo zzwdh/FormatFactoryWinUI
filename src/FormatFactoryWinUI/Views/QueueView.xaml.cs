@@ -16,6 +16,7 @@ public sealed partial class QueueView : UserControl
     {
         InitializeComponent();
         InitializeCompactCommands();
+        InitializeQueueScrollBoundary();
     }
 
     private ObservableCollection<MediaTaskViewModel>? _boundTasks;
@@ -59,6 +60,7 @@ public sealed partial class QueueView : UserControl
 
     private void BoundTasksChanged(object? sender, NotifyCollectionChangedEventArgs args)
     {
+        CancelQueueEndScroll();
         if (_outputGroupRefreshDeferrals > 0) { _outputGroupRefreshPending = true; return; }
         if (_boundTasks is not null && _outputGroups.TryApplyIncrementalChange(args, _boundTasks.Count)) return;
         RefreshOutputGroups();
@@ -102,6 +104,7 @@ public sealed partial class QueueView : UserControl
 
     private void ToggleOutputGroup_Click(object sender, RoutedEventArgs args)
     {
+        CancelQueueEndScroll();
         if (sender is not FrameworkElement { Tag: Guid id }) return;
         if (_outputGroups.FindOutputGroup(id) is not { } group) return;
         group.IsExpanded = !group.IsExpanded;
@@ -111,6 +114,7 @@ public sealed partial class QueueView : UserControl
     }
     private void TaskList_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
     {
+        EnsureQueueScrollViewer();
         if (args.ItemContainer is not null)
             args.ItemContainer.Visibility = args.Item is MediaTaskViewModel { OutputGroupExpanded: false }
                 ? Visibility.Collapsed : Visibility.Visible;

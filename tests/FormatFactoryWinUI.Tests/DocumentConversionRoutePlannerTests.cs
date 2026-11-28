@@ -52,6 +52,28 @@ public sealed class DocumentConversionRoutePlannerTests
     }
 
     [Fact]
+    public void LegacyDocFirstTriesInstalledLibreOfficeAndUsesIFilterWhenUnavailable()
+    {
+        var planner = new DocumentConversionRoutePlanner();
+        var request = Request([("legacy.doc", "doc")], "txt");
+        Assert.Equal([ExternalEngineIds.LibreOffice, DocumentEngineIds.DocxReader, DocumentEngineIds.TextWriter],
+            planner.Plan(request, AllTools).Steps.Select(step => step.EngineId));
+        Assert.Equal([DocumentEngineIds.WindowsFilter, DocumentEngineIds.TextWriter],
+            planner.Plan(request, []).Steps.Select(step => step.EngineId));
+    }
+
+    [Theory]
+    [InlineData("pdf")]
+    [InlineData("caj")]
+    public void FixedEpubPlanUsesRenderedPages(string source)
+    {
+        var request = Request([("input." + source, source)], "epub") with { Mode = "fixed" };
+        var steps = new DocumentConversionRoutePlanner().Plan(request, AllTools).Steps;
+        Assert.Equal(DocumentEngineIds.PdfRenderer, steps[^2].EngineId);
+        Assert.Equal(DocumentEngineIds.EpubWriter, steps[^1].EngineId);
+    }
+
+    [Fact]
     public void Plan_RequiresCalibreOnlyForMobiAndAzw3Output()
     {
         var planner = new DocumentConversionRoutePlanner();
